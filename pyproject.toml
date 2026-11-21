@@ -1,0 +1,12 @@
+[project]
+name = "hbc-rag-workspace"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["packages/*", "apps/*"]
+
+[tool.uv.sources]
+hbc-rag-core = { workspace = true }
+hbc-harness = { workspace = true }

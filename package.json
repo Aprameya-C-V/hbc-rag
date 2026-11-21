@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "@neon/config": "^1.14.6",
+    "@neon/env": "^2.1.9"
+  },
+  "name": "hbc-rag",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix web run build",
+    "dev:web": "npm --prefix web run dev",
+    "plan": "neon config plan",
+    "deploy": "neon deploy"
+  }
+}
