@@ -10,3 +10,10 @@ members = ["packages/*", "apps/*"]
 [tool.uv.sources]
 hbc-rag-core = { workspace = true }
 hbc-harness = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/rag-core/tests", "packages/harness/tests"]
+addopts = "-q"

@@ -15,3 +15,4 @@ src/hbc_harness.egg-info/top_level.txt
 src/hbc_harness/eval/__init__.py
 src/hbc_harness/eval/score.py
 src/hbc_harness/eval/stats.py
+tests/test_eval.py

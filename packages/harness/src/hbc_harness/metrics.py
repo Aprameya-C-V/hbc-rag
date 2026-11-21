@@ -3,28 +3,25 @@ from __future__ import annotations
 from typing import Iterable
 
 import numpy as np
-from hdrhistogram import Histogram
-
-
-def percentile_hist(values: Iterable[float]) -> Histogram:
-    hist = Histogram(1, 600_000, 3)
-    for value in values:
-        hist.record_value(max(1, int(value)))
-    return hist
 
 
 def summarize(latencies_ms: list[float], *, slo_ms: float = 6000.0) -> dict[str, float]:
+    """Exact percentiles over every recorded sample.
+
+    Full samples are kept, so no histogram bucketing is needed and p99 is not
+    rounded by a bucket width.
+    """
     if not latencies_ms:
         return {}
-    hist = percentile_hist(latencies_ms)
-    good = sum(1 for v in latencies_ms if v <= slo_ms)
+    values = np.asarray(latencies_ms, dtype=float)
+    good = int((values <= slo_ms).sum())
     return {
-        "n": float(len(latencies_ms)),
-        "p50_ms": float(hist.percentile_at_percentile(50)),
-        "p95_ms": float(hist.percentile_at_percentile(95)),
-        "p99_ms": float(hist.percentile_at_percentile(99)),
-        "max_ms": float(max(latencies_ms)),
-        "mean_ms": float(np.mean(latencies_ms)),
-        "goodput": good / len(latencies_ms),
+        "n": float(values.size),
+        "p50_ms": float(np.percentile(values, 50)),
+        "p95_ms": float(np.percentile(values, 95)),
+        "p99_ms": float(np.percentile(values, 99)),
+        "max_ms": float(values.max()),
+        "mean_ms": float(values.mean()),
+        "goodput": good / float(values.size),
         "slo_ms": slo_ms,
     }

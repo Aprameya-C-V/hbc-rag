@@ -18,7 +18,6 @@ from pydantic import BaseModel
 from hbc_rag.config import ROOT, load_env
 from hbc_rag.pipeline import RagPipeline
 from hbc_rag.policies import CoarseHop
-from hbc_rag.providers.openai_compat import OpenAICompat
 from hbc_rag.store.pg import PgVectorStore
 from hbc_rag.types import RunMeta
 
@@ -118,13 +117,9 @@ async def ask(request: AskRequest) -> dict[str, Any]:
 
         app.state.embedder = await asyncio.to_thread(FastEmbed)
     if app.state.generator is None:
-        provider = os.getenv("HBC_PROVIDER", "gemini")
-        if provider == "gemini":
-            from hbc_rag.providers.gemini_interactions import GeminiInteractions
+        from hbc_rag.providers.factory import make_generator
 
-            app.state.generator = GeminiInteractions(os.getenv("HBC_MODEL", "gemini-3.5-flash-lite"))
-        else:
-            app.state.generator = OpenAICompat(os.getenv("HBC_MODEL", "deepseek-v4.1-flash"))
+        app.state.generator = make_generator()
 
     rag = RagPipeline(
         store=app.state.store,
