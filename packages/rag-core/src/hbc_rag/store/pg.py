@@ -12,6 +12,11 @@ from ..types import Document, Retrieved, RunMeta
 SCHEMA = Path(__file__).with_name("schema.sql").read_text()
 
 
+async def _configure(conn) -> None:
+    await conn.execute("set search_path to hbc_rag, public")
+    await conn.commit()
+
+
 def vec_literal(values: Iterable[float]) -> str:
     return "[" + ",".join(f"{v:.6f}" for v in values) + "]"
 
@@ -25,6 +30,7 @@ class PgVectorStore:
             max_size=max_size,
             open=False,
             kwargs={"row_factory": dict_row, "prepare_threshold": None},
+            configure=_configure,
         )
 
     async def open(self) -> "PgVectorStore":

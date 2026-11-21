@@ -1,4 +1,6 @@
-create extension if not exists vector;
+create schema if not exists hbc_rag;
+create extension if not exists vector with schema public;
+set search_path to hbc_rag, public;
 
 create table if not exists documents (
   id        bigserial primary key,
