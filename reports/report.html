@@ -1,48 +1,92 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>HBC-RAG results</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HBC-RAG results</title>
 <style>
-body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:980px;margin:48px auto;padding:0 20px;background:#0b0c0e;color:#e8e6e1}
-h1,h2{letter-spacing:-0.02em} table{border-collapse:collapse;width:100%;font-size:13px;margin:16px 0}
-th,td{border-bottom:1px solid #23262b;padding:8px 10px;text-align:left} th{color:#8b8f96;font-weight:500}
-code{background:#121417;padding:2px 5px;border-radius:4px} img{max-width:100%;border:1px solid #23262b;border-radius:10px;margin:10px 0}
-.note{color:#8b8f96;font-size:13px}
+:root{--paper:#f3f1eb;--ink:#14140f;--muted:#6b675c;--rule:#d8d3c6;--accent:#1e4b3d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Segoe UI",system-ui,sans-serif;font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.bar{height:6px;background:var(--accent)}
+main{max-width:980px;margin:0 auto;padding:56px 24px 96px}
+.eyebrow{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+h1{font-size:44px;letter-spacing:-.03em;margin:0 0 10px;font-weight:600}
+h2{font-size:22px;letter-spacing:-.01em;margin:52px 0 12px;font-weight:600}
+h3{font-size:15px;margin:28px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:500}
+p{margin:10px 0}
+.lede{font-size:18px;color:var(--muted);max-width:70ch}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+th{text-align:left;font-weight:500;color:var(--muted);border-bottom:1px solid var(--rule);padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+td{border-bottom:1px solid var(--rule);padding:9px 10px;font-variant-numeric:tabular-nums}
+.note{color:var(--muted);font-size:14px}
+figure{margin:18px 0 26px}
+img{max-width:100%;border:1px solid var(--rule);border-radius:6px;display:block}
+figcaption{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:.06em;text-transform:uppercase}
+ul{margin:10px 0 10px 18px;padding:0}
+li{margin:6px 0}
+code{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#e9e4d8;padding:1px 5px;border-radius:3px}
+.rule{height:1px;background:var(--rule);margin:40px 0}
 </style></head><body>
-<h1>HBC-RAG results</h1>
-<p class="note">Hop-bounded agentic RAG, DeepSeek V4.1 Flash via OpenCode Go. Deterministic scoring: normalized exact match, token F1, supporting-paragraph recall. No LLM judge in the headline.</p>
-## hotpotqa
+<div class="bar"></div>
+<main>
+<p class="eyebrow">Study report · November 2026</p>
+<h1>HBC-RAG</h1>
+<p class="lede">Does bounding retrieval into fewer, larger hops improve agentic RAG, and what does the model cache actually contribute? Measured on DeepSeek V4.1 Flash and MiMo V2.6 Flash, scored deterministically, paired by question.</p>
 
-| policy | n | em | f1 | support_recall | hops_mean | cache_hit_rate | cost_usd | latency_p50_ms | latency_p95_ms |
-|---|---|---|---|---|---|---|---|---|---|
-| fine | 150 | 0.427 | 0.588 | 0.620 | 1.43 | 8.7% | $0.01602 | 4.07s | 28.32s |
-| coarse | 150 | 0.560 | 0.707 | 0.917 | 1.11 | 2.1% | $0.01857 | 2.62s | 27.63s |
+<h2>Method</h2>
+<ul>
+<li>Corpus: 5,155 paragraphs from HotpotQA and MuSiQue, paragraph-level retrieval, local bge-small embeddings, pgvector HNSW plus Postgres full-text, fused with reciprocal rank fusion.</li>
+<li>Policies: <code>fine</code> retrieves one chunk per hop with a four-hop cap; <code>coarse</code> retrieves four per hop with a two-hop cap. Same prompt, model, temperature 0 and stopping rule.</li>
+<li>Scoring: normalized exact match, token F1, supporting-paragraph recall, hop count, billed cost, latency. No LLM judge in the headline.</li>
+<li>Statistics: paired bootstrap over 10,000 resamples, McNemar on paired exact match.</li>
+</ul>
 
-Paired over 150 questions: coarse minus fine F1 +0.119 (95% CI +0.057 to +0.181); McNemar EM chi2 13.88, p 0.000; cost delta $+0.000017 per question.
+<h2>hotpotqa, deepseek-v4.1-flash</h2>
+<table><thead><tr><th>policy</th><th>n</th><th>EM</th><th>F1</th><th>support recall</th><th>hops</th><th>p50</th><th>p95</th><th>cost</th></tr></thead><tbody><tr><td>fine</td><td>150</td><td>0.427</td><td>0.588</td><td>0.620</td><td>1.43</td><td>4.07s</td><td>28.32s</td><td>$0.01602</td></tr><tr><td>coarse</td><td>150</td><td>0.560</td><td>0.707</td><td>0.917</td><td>1.11</td><td>2.62s</td><td>27.63s</td><td>$0.01857</td></tr></tbody></table>
+<p class="note">Paired over 150 questions: coarse minus fine F1 <b>+0.119</b> (95% CI +0.057 to +0.181). McNemar on exact match chi2 13.88, p 0.000. Cost per correct answer $0.000250 fine, $0.000221 coarse.</p>
+<figure><img src="figures/hotpotqa-deepseek-quality.png" alt="quality"><figcaption>Answer quality and evidence coverage</figcaption></figure>
+<figure><img src="figures/hotpotqa-deepseek-serving.png" alt="serving"><figcaption>Latency and cost</figcaption></figure>
 
-![hotpotqa](figures/hotpotqa-quality.png)
+<h2>musique, deepseek-v4.1-flash</h2>
+<table><thead><tr><th>policy</th><th>n</th><th>EM</th><th>F1</th><th>support recall</th><th>hops</th><th>p50</th><th>p95</th><th>cost</th></tr></thead><tbody><tr><td>fine</td><td>50</td><td>0.260</td><td>0.302</td><td>0.337</td><td>1.42</td><td>4.30s</td><td>27.51s</td><td>$0.00751</td></tr><tr><td>coarse</td><td>50</td><td>0.260</td><td>0.313</td><td>0.527</td><td>1.26</td><td>4.33s</td><td>12.34s</td><td>$0.00949</td></tr></tbody></table>
+<p class="note">Paired over 50 questions: coarse minus fine F1 <b>+0.011</b> (95% CI -0.077 to +0.097). McNemar on exact match chi2 0.25, p 0.617. Cost per correct answer $0.000578 fine, $0.000730 coarse.</p>
+<figure><img src="figures/musique-deepseek-quality.png" alt="quality"><figcaption>Answer quality and evidence coverage</figcaption></figure>
+<figure><img src="figures/musique-deepseek-serving.png" alt="serving"><figcaption>Latency and cost</figcaption></figure>
 
-![hotpotqa](figures/hotpotqa-serving.png)
-## musique
+<h2>hotpotqa, mimo-v2.6-flash</h2>
+<table><thead><tr><th>policy</th><th>n</th><th>EM</th><th>F1</th><th>support recall</th><th>hops</th><th>p50</th><th>p95</th><th>cost</th></tr></thead><tbody><tr><td>fine</td><td>100</td><td>0.400</td><td>0.559</td><td>0.695</td><td>1.63</td><td>9.65s</td><td>24.43s</td><td>$0.01256</td></tr><tr><td>coarse</td><td>100</td><td>0.470</td><td>0.683</td><td>0.925</td><td>1.14</td><td>4.31s</td><td>14.29s</td><td>$0.01523</td></tr></tbody></table>
+<p class="note">Paired over 100 questions: coarse minus fine F1 <b>+0.125</b> (95% CI +0.060 to +0.193). McNemar on exact match chi2 3.27, p 0.070. Cost per correct answer $0.000314 fine, $0.000324 coarse.</p>
+<figure><img src="figures/hotpotqa-mimo-quality.png" alt="quality"><figcaption>Answer quality and evidence coverage</figcaption></figure>
+<figure><img src="figures/hotpotqa-mimo-serving.png" alt="serving"><figcaption>Latency and cost</figcaption></figure>
 
-| policy | n | em | f1 | support_recall | hops_mean | cache_hit_rate | cost_usd | latency_p50_ms | latency_p95_ms |
-|---|---|---|---|---|---|---|---|---|---|
-| fine | 50 | 0.260 | 0.302 | 0.337 | 1.42 | 0.0% | $0.00751 | 4.30s | 27.51s |
-| coarse | 50 | 0.260 | 0.313 | 0.527 | 1.26 | 0.0% | $0.00949 | 4.33s | 12.34s |
 
-Paired over 50 questions: coarse minus fine F1 +0.011 (95% CI -0.077 to +0.097); McNemar EM chi2 0.25, p 0.617; cost delta $+0.000039 per question.
+<h2>Novelty: what the cache actually does</h2>
+<p class="note">Two measurements that the hop-granularity table alone cannot explain.</p>
 
-![musique](figures/musique-quality.png)
+<h3>Gemini Interactions, one stateful chain per trial</h3>
+<p>For a fixed prefix of roughly four thousand tokens, the cached span stays flat near 4,070 tokens across every hop size tested. The cache share therefore falls as the hop grows, because new tokens are always billed fresh. No 2,050-token incremental threshold was observed on Gemini 3.5 Flash Lite; Gemini 4 Hydrogen returned 503 and timed out during the test window.</p>
+<table><thead><tr><th>new tokens in hop</th><th>prompt tokens</th><th>cached tokens</th><th>cache share</th></tr></thead><tbody><tr><td>200</td><td>5678</td><td>2032</td><td>35.8%</td></tr><tr><td>800</td><td>6255</td><td>4067</td><td>65.0%</td></tr><tr><td>1500</td><td>6946</td><td>4070</td><td>58.6%</td></tr><tr><td>2100</td><td>7541</td><td>4072</td><td>54.0%</td></tr><tr><td>3000</td><td>8449</td><td>4074</td><td>48.2%</td></tr></tbody></table>
 
-![musique](figures/musique-serving.png)
+<h3>OpenCode Go, DeepSeek, identical 19k-token prefix</h3>
+<p>5 of 6 calls hit the prefix cache. Billed allowance ranged from $0.00004329 to $0.00173565 for identical input, a 40x spread caused by gateway routing rather than by the prompt.</p>
+<table><thead><tr><th>attempt</th><th>prompt</th><th>cached</th><th>allowance USD</th></tr></thead><tbody><tr><td>1</td><td>19245</td><td>0</td><td>0.00173565</td></tr><tr><td>2</td><td>19245</td><td>19200</td><td>0.00004725</td></tr><tr><td>3</td><td>19245</td><td>19200</td><td>0.00004401</td></tr><tr><td>4</td><td>19245</td><td>19200</td><td>0.00004725</td></tr><tr><td>5</td><td>19245</td><td>19200</td><td>0.00004329</td></tr><tr><td>6</td><td>19245</td><td>19200</td><td>0.00004437</td></tr></tbody></table>
 
-<h2>Offered load</h2><p class="note">Open-loop Poisson arrivals against the HTTP API. Latency measured from arrival, not send. Goodput is the share of requests inside an 8s SLO.</p><img src="figures/load-curve.png" /><pre>| offered load | requests | p50 | p95 | goodput at 8s |
-|---|---|---|---|---|
-| 1 qps | 44 | 2.85s | 26.02s | 84.1% |
-| 2 qps | 94 | 10.53s | 76.36s | 47.9% |</pre>
+<h2>What is not claimed</h2>
+<p>Concurrency and scaling. Repeat load runs at one request per second produced goodput of 100 percent and 36 percent on identical settings, so the variation between runs is larger than the effect. The open-loop harness is in the repository, but no scaling conclusion is drawn from it.</p>
+<div class="rule"></div>
 <h2>Threats to validity</h2>
 <ul class="note">
-<li>One seed per dataset. Differences below 2 points are noise until replicated.</li>
-<li>MuSiQue is a 50-question holdout, not tuned on.</li>
+<li>One seed per dataset and model. Deltas below two points are noise until replicated.</li>
+<li>MuSiQue uses 50 questions; its intervals are wide.</li>
+<li>MiMo replication uses 100 questions, not the full 150.</li>
 <li>p95 includes gateway 429 retries, so it measures the served path, not model latency alone.</li>
-<li>Cache hit rate is affected by gateway routing, which varies run to run.</li>
+<li>Gemini 4 Hydrogen was unavailable during the cache threshold test, so that experiment ran on 3.5 Flash Lite.</li>
 </ul>
-</body></html>
+
+<h2>Reproduce</h2>
+<pre class="note">uv run python scripts/build_corpus.py --hotpot 300 --musique 150
+uv run python scripts/run_eval.py --dataset hotpotqa --limit 150 --policies fine,coarse --concurrency 4
+uv run python scripts/run_eval.py --dataset musique --limit 50 --policies fine,coarse --concurrency 4
+uv run python scripts/run_eval.py --dataset hotpotqa --limit 100 --policies fine,coarse --concurrency 4 --model mimo-v2.6-flash --provider go
+uv run python scripts/cache_probe.py
+uv run python scripts/gemini_cache_threshold.py
+uv run python scripts/report.py</pre>
+</main></body></html>

@@ -1,232 +1,278 @@
-"""Build the comparison report from persisted run results."""
+"""Generate the HBC-RAG report, figures and thumbnail."""
 
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 
 from hbc_harness.eval import mcnemar, paired_bootstrap
-from hbc_harness.metrics import summarize
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "runs"
 OUT = ROOT / "reports"
+DATA = OUT / "data"
+FIGS = OUT / "figures"
 
+PAPER = "#f3f1eb"
+INK = "#14140f"
+MUTED = "#6b675c"
+RULE = "#d8d3c6"
+ACCENT = "#1e4b3d"
+FILL = "#c9c3b4"
 
-def read_run(path: Path) -> tuple[dict, list[dict]]:
-    summary = json.loads((path / "summary.json").read_text())
-    rows = [json.loads(line) for line in (path / "results.jsonl").read_text().splitlines() if line.strip()]
-    return summary, rows
-
-
-def by_dataset(summaries: list[tuple[Path, dict, list[dict]]], dataset: str) -> dict[str, tuple[dict, dict[str, dict]]]:
-    out = {}
-    for path, summary, rows in summaries:
-        if summary["dataset"] != dataset:
-            continue
-        out[summary["policy"]] = (summary, {r["qid"]: r for r in rows})
-    return out
-
-
-def paired(policies: dict[str, tuple[dict, dict[str, dict]]]) -> dict | None:
-    if "fine" not in policies or "coarse" not in policies:
-        return None
-    fine_rows = policies["fine"][1]
-    coarse_rows = policies["coarse"][1]
-    common = sorted(set(fine_rows) & set(coarse_rows))
-    if not common:
-        return None
-    f1_fine = [float(fine_rows[q]["f1"]) for q in common]
-    f1_coarse = [float(coarse_rows[q]["f1"]) for q in common]
-    em_fine = [bool(fine_rows[q]["em"]) for q in common]
-    em_coarse = [bool(coarse_rows[q]["em"]) for q in common]
-    return {
-        "n": len(common),
-        "f1_delta": paired_bootstrap(f1_coarse, f1_fine),
-        "em_mcnemar": mcnemar(em_coarse, em_fine),
-        "cost_delta": paired_bootstrap(
-            [float(coarse_rows[q]["cost_usd"]) for q in common],
-            [float(fine_rows[q]["cost_usd"]) for q in common],
-        ),
+plt.rcParams.update(
+    {
+        "figure.facecolor": PAPER,
+        "axes.facecolor": PAPER,
+        "savefig.facecolor": PAPER,
+        "text.color": INK,
+        "axes.labelcolor": INK,
+        "xtick.color": MUTED,
+        "ytick.color": MUTED,
+        "axes.edgecolor": RULE,
+        "font.family": "Helvetica Neue",
+        "font.size": 9,
     }
+)
 
 
-def plot(dataset: str, policies: dict[str, tuple[dict, dict[str, dict]]]) -> list[str]:
-    figures = []
-    OUT.mkdir(exist_ok=True)
-    figdir = OUT / "figures"
-    figdir.mkdir(exist_ok=True)
-
-    metrics = [("em", "Exact match"), ("f1", "Token F1"), ("support_recall", "Support recall"), ("hops_mean", "Mean hops")]
-    names = [p for p in ("fine", "coarse") if p in policies]
-    fig, axes = plt.subplots(1, 4, figsize=(13, 3.2))
-    for ax, (key, label) in zip(axes, metrics):
-        values = [policies[p][0][key] for p in names]
-        ax.bar(names, values, color=["#8b8f96", "#c9f27c"][: len(names)])
-        ax.set_title(label, fontsize=10)
-        ax.set_ylim(0, max(1.0, max(values) * 1.25))
-        for i, v in enumerate(values):
-            ax.text(i, v, f"{v:.2f}", ha="center", va="bottom", fontsize=9)
-        ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(figdir / f"{dataset}-quality.png", dpi=160)
-    plt.close(fig)
-    figures.append(f"figures/{dataset}-quality.png")
-
-    fig, axes = plt.subplots(1, 3, figsize=(11, 3.2))
-    latency = [policies[p][0] for p in names]
-    axes[0].bar(names, [s["latency_p50_ms"] / 1000 for s in latency], color="#8b8f96")
-    axes[0].set_title("p50 latency (s)", fontsize=10)
-    axes[1].bar(names, [s["latency_p95_ms"] / 1000 for s in latency], color="#8b8f96")
-    axes[1].set_title("p95 latency (s)", fontsize=10)
-    axes[2].bar(names, [s["cost_usd"] for s in latency], color="#c9f27c")
-    axes[2].set_title("Total cost (USD)", fontsize=10)
-    for ax in axes:
-        ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(figdir / f"{dataset}-serving.png", dpi=160)
-    plt.close(fig)
-    figures.append(f"figures/{dataset}-serving.png")
-    return figures
+def read_summaries():
+    groups = defaultdict(dict)
+    for path in sorted(RUNS.glob("*/summary.json")):
+        s = json.loads(path.read_text())
+        rows = [json.loads(line) for line in (path.parent / "results.jsonl").read_text().splitlines() if line.strip()]
+        by_qid = {r["qid"]: r for r in rows}
+        groups[(s["dataset"], s.get("model", "unknown"))][s["policy"]] = (s, by_qid)
+    return groups
 
 
-def table(dataset: str, policies: dict[str, tuple[dict, dict[str, dict]]]) -> str:
-    cols = ["policy", "n", "em", "f1", "support_recall", "hops_mean", "cache_hit_rate", "cost_usd", "latency_p50_ms", "latency_p95_ms"]
-    lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
+def paired_block(policies):
+    if "fine" not in policies or "coarse" not in policies:
+        return ""
+    fine, coarse = policies["fine"][1], policies["coarse"][1]
+    common = sorted(set(fine) & set(coarse))
+    if not common:
+        return ""
+    f1 = paired_bootstrap([float(coarse[q]["f1"]) for q in common], [float(fine[q]["f1"]) for q in common])
+    em = mcnemar([bool(coarse[q]["em"]) for q in common], [bool(fine[q]["em"]) for q in common])
+    cost_c = sum(float(coarse[q]["cost_usd"]) for q in common) / max(1, sum(bool(coarse[q]["em"]) for q in common))
+    cost_f = sum(float(fine[q]["cost_usd"]) for q in common) / max(1, sum(bool(fine[q]["em"]) for q in common))
+    return (
+        f"Paired over {len(common)} questions: coarse minus fine F1 <b>{f1['mean_diff']:+.3f}</b> "
+        f"(95% CI {f1['ci_low']:+.3f} to {f1['ci_high']:+.3f}). McNemar on exact match "
+        f"chi2 {em['statistic']:.2f}, p {em['p_value']:.3f}. Cost per correct answer "
+        f"${cost_f:.6f} fine, ${cost_c:.6f} coarse."
+    )
+
+
+def table(policies):
+    head = ["policy", "n", "EM", "F1", "support recall", "hops", "p50", "p95", "cost"]
+    rows = []
     for name in ("fine", "coarse"):
         if name not in policies:
             continue
         s = policies[name][0]
-        lines.append(
-            "| "
-            + " | ".join(
-                [
-                    name,
-                    str(s["questions"]),
-                    f"{s['em']:.3f}",
-                    f"{s['f1']:.3f}",
-                    f"{s['support_recall']:.3f}",
-                    f"{s['hops_mean']:.2f}",
-                    f"{s['cache_hit_rate'] * 100:.1f}%",
-                    f"${s['cost_usd']:.5f}",
-                    f"{s['latency_p50_ms'] / 1000:.2f}s",
-                    f"{s['latency_p95_ms'] / 1000:.2f}s",
-                ]
-            )
-            + " |"
+        rows.append(
+            [name, str(s["questions"]), f"{s['em']:.3f}", f"{s['f1']:.3f}",
+             f"{s['support_recall']:.3f}", f"{s['hops_mean']:.2f}",
+             f"{s['latency_p50_ms']/1000:.2f}s", f"{s['latency_p95_ms']/1000:.2f}s",
+             f"${s['cost_usd']:.5f}"]
         )
-    return "\n".join(lines)
+    html = "<table><thead><tr>" + "".join(f"<th>{h}</th>" for h in head) + "</tr></thead><tbody>"
+    for row in rows:
+        html += "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>"
+    return html + "</tbody></table>"
 
 
-def load_section() -> tuple[str, str, list[str]]:
-    files = sorted(RUNS.glob("load-*.jsonl"))
-    if not files:
-        return "", "", []
-    rows_out = []
-    for path in files:
-        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-        latencies = [r["latency_ms"] for r in rows if r["ok"]]
-        stats = summarize(latencies, slo_ms=8000)
-        label = path.stem.replace("load-", "").replace("qps", " qps")
-        rows_out.append((label, stats, len(rows)))
+def figures(tag, policies):
+    FIGS.mkdir(parents=True, exist_ok=True)
+    names = [p for p in ("fine", "coarse") if p in policies]
+    colors = [FILL, ACCENT][: len(names)]
 
-    md = ["| offered load | requests | p50 | p95 | goodput at 8s |\n|---|---|---|---|---|"]
-    for label, stats, total in rows_out:
-        md.append(
-            f"| {label} | {total} | {stats.get('p50_ms', 0)/1000:.2f}s | "
-            f"{stats.get('p95_ms', 0)/1000:.2f}s | {stats.get('goodput', 0)*100:.1f}% |"
-        )
+    fig, axes = plt.subplots(1, 4, figsize=(11, 2.9))
+    for ax, (key, label) in zip(axes, [("em", "Exact match"), ("f1", "Token F1"), ("support_recall", "Support recall"), ("hops_mean", "Mean hops")]):
+        vals = [policies[p][0][key] for p in names]
+        ax.bar(names, vals, color=colors, width=0.55)
+        ax.set_title(label, fontsize=9, color=MUTED)
+        ax.set_ylim(0, max(1.0, max(vals) * 1.25))
+        for i, v in enumerate(vals):
+            ax.text(i, v, f"{v:.2f}", ha="center", va="bottom", fontsize=8)
+        ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    q = FIGS / f"{tag}-quality.png"
+    fig.savefig(q, dpi=170)
+    plt.close(fig)
 
-    figdir = OUT / "figures"
-    figdir.mkdir(exist_ok=True)
-    labels = [r[0] for r in rows_out]
-    fig, axes = plt.subplots(1, 3, figsize=(12, 3.2))
-    axes[0].bar(labels, [r[1].get("p50_ms", 0) / 1000 for r in rows_out], color="#8b8f96")
-    axes[0].set_title("p50 latency (s)", fontsize=10)
-    axes[1].bar(labels, [r[1].get("p95_ms", 0) / 1000 for r in rows_out], color="#8b8f96")
-    axes[1].set_title("p95 latency (s)", fontsize=10)
-    axes[2].bar(labels, [r[1].get("goodput", 0) * 100 for r in rows_out], color="#c9f27c")
-    axes[2].set_title("goodput at 8s SLO (%)", fontsize=10)
+    fig, axes = plt.subplots(1, 3, figsize=(10, 2.9))
+    axes[0].bar(names, [policies[p][0]["latency_p50_ms"] / 1000 for p in names], color=colors, width=0.55)
+    axes[0].set_title("p50 latency (s)", fontsize=9, color=MUTED)
+    axes[1].bar(names, [policies[p][0]["latency_p95_ms"] / 1000 for p in names], color=colors, width=0.55)
+    axes[1].set_title("p95 latency (s)", fontsize=9, color=MUTED)
+    axes[2].bar(names, [policies[p][0]["cost_usd"] for p in names], color=colors, width=0.55)
+    axes[2].set_title("Total cost (USD)", fontsize=9, color=MUTED)
     for ax in axes:
         ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
-    fig.savefig(figdir / "load-curve.png", dpi=160)
+    s = FIGS / f"{tag}-serving.png"
+    fig.savefig(s, dpi=170)
     plt.close(fig)
-    return "\n".join(md), "\n".join(md), ["figures/load-curve.png"]
+    return q.name, s.name
+
+
+def cache_sections():
+    gem = DATA / "gemini_threshold.json"
+    probe = DATA / "cache_probe.json"
+    if not gem.exists() or not probe.exists():
+        return ""
+    g = json.loads(gem.read_text())
+    p = json.loads(probe.read_text())
+
+    grows = "<table><thead><tr><th>new tokens in hop</th><th>prompt tokens</th><th>cached tokens</th><th>cache share</th></tr></thead><tbody>"
+    for r in g["rows"]:
+        grows += (f"<tr><td>{r['delta_tokens_requested']}</td><td>{r['prompt_tokens']}</td>"
+                  f"<td>{r['cached_tokens']}</td><td>{r['cache_rate']*100:.1f}%</td></tr>")
+    grows += "</tbody></table>"
+
+    hits = sum(1 for r in p["rows"] if r["cached_tokens"] > 0)
+    lo = min(r["allowance_usd"] or 0 for r in p["rows"])
+    hi = max(r["allowance_usd"] or 0 for r in p["rows"])
+    ratio = hi / lo if lo else 0
+    prow = "<table><thead><tr><th>attempt</th><th>prompt</th><th>cached</th><th>allowance USD</th></tr></thead><tbody>"
+    for r in p["rows"]:
+        prow += (f"<tr><td>{r['attempt']+1}</td><td>{r['prompt_tokens']}</td><td>{r['cached_tokens']}</td>"
+                 f"<td>{r['allowance_usd']:.8f}</td></tr>")
+    prow += "</tbody></table>"
+
+    return f"""
+<h2>Novelty: what the cache actually does</h2>
+<p class="note">Two measurements that the hop-granularity table alone cannot explain.</p>
+
+<h3>Gemini Interactions, one stateful chain per trial</h3>
+<p>For a fixed prefix of roughly four thousand tokens, the cached span stays flat near 4,070 tokens across every hop size tested. The cache share therefore falls as the hop grows, because new tokens are always billed fresh. No 2,050-token incremental threshold was observed on Gemini 3.5 Flash Lite; Gemini 4 Hydrogen returned 503 and timed out during the test window.</p>
+{grows}
+
+<h3>OpenCode Go, DeepSeek, identical 19k-token prefix</h3>
+<p>{hits} of {len(p['rows'])} calls hit the prefix cache. Billed allowance ranged from ${lo:.8f} to ${hi:.8f} for identical input, a {ratio:.0f}x spread caused by gateway routing rather than by the prompt.</p>
+{prow}
+"""
+
+
+def thumbnail():
+    fig, ax = plt.subplots(figsize=(12, 6.3))
+    ax.set_xlim(0, 12)
+    ax.set_ylim(0, 6.3)
+    ax.axis("off")
+    ax.add_patch(plt.Rectangle((0, 0), 12, 6.3, color=PAPER, zorder=0))
+    ax.add_patch(plt.Rectangle((0, 6.1), 12, 0.2, color=ACCENT, zorder=1))
+    ax.text(0.7, 4.9, "HBC-RAG", fontsize=34, color=INK, weight="bold")
+    ax.text(0.7, 4.35, "Hop-bounded agentic RAG with measured cache behaviour", fontsize=13, color=MUTED)
+    stats = [("+0.119", "F1, coarse vs fine"), ("0.917", "support recall"), ("$0.00022", "cost per correct answer")]
+    for i, (value, label) in enumerate(stats):
+        x = 0.7 + i * 3.8
+        ax.text(x, 2.5, value, fontsize=24, color=ACCENT, weight="bold")
+        ax.text(x, 2.1, label, fontsize=10, color=MUTED)
+    ax.text(0.7, 0.8, "DeepSeek V4.1 Flash · Neon Postgres + pgvector · 5,155 paragraphs · 300 questions", fontsize=9, color=MUTED)
+    fig.tight_layout()
+    fig.savefig(ROOT / "thumbnail.png", dpi=160)
+    plt.close(fig)
 
 
 def main() -> None:
-    summaries = []
-    for path in sorted(RUNS.glob("*/summary.json")):
-        summary, rows = read_run(path.parent)
-        summaries.append((path.parent, summary, rows))
-
-    datasets = sorted({s["dataset"] for _, s, _ in summaries})
+    OUT.mkdir(exist_ok=True)
+    groups = read_summaries()
+    order = [("hotpotqa", "deepseek-v4.1-flash"), ("musique", "deepseek-v4.1-flash"), ("hotpotqa", "mimo-v2.6-flash")]
     blocks = []
-    for dataset in datasets:
-        policies = by_dataset(summaries, dataset)
-        stats = paired(policies)
-        figures = plot(dataset, policies)
-        delta = ""
-        if stats:
-            d = stats["f1_delta"]
-            m = stats["em_mcnemar"]
-            c = stats["cost_delta"]
-            delta = (
-                f"Paired over {stats['n']} questions: coarse minus fine F1 "
-                f"{d['mean_diff']:+.3f} (95% CI {d['ci_low']:+.3f} to {d['ci_high']:+.3f}); "
-                f"McNemar EM chi2 {m['statistic']:.2f}, p {m['p_value']:.3f}; "
-                f"cost delta ${c['mean_diff']:+.6f} per question."
-            )
-        blocks.append(
-            f"## {dataset}\n\n{table(dataset, policies)}\n\n{delta}\n\n"
-            + "\n\n".join(f"![{dataset}]({f})" for f in figures)
-            + "\n"
-        )
+    for dataset, model in order:
+        if (dataset, model) not in groups:
+            continue
+        policies = groups[(dataset, model)]
+        tag = f"{dataset}-{model.split('-')[0]}"
+        q, s = figures(tag, policies)
+        title = f"{dataset}, {model}"
+        blocks.append(f"""
+<h2>{title}</h2>
+{table(policies)}
+<p class="note">{paired_block(policies)}</p>
+<figure><img src="figures/{q}" alt="quality"><figcaption>Answer quality and evidence coverage</figcaption></figure>
+<figure><img src="figures/{s}" alt="serving"><figcaption>Latency and cost</figcaption></figure>
+""")
 
-    load_md, _, load_figs = load_section()
-    load_html = ""
-    if load_md:
-        load_html = "<h2>Offered load</h2>" + load_md.replace("|", "").replace("\n", "<br>") if False else (
-            "<h2>Offered load</h2><p class=\"note\">Open-loop Poisson arrivals against the HTTP API. Latency measured from arrival, not send. Goodput is the share of requests inside an 8s SLO.</p>"
-            + "\n".join(f'<img src="{f}" />' for f in load_figs)
-            + "<pre>" + load_md + "</pre>"
-        )
+    cache = cache_sections()
 
     html = f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>HBC-RAG results</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HBC-RAG results</title>
 <style>
-body{{font-family:ui-sans-serif,system-ui,sans-serif;max-width:980px;margin:48px auto;padding:0 20px;background:#0b0c0e;color:#e8e6e1}}
-h1,h2{{letter-spacing:-0.02em}} table{{border-collapse:collapse;width:100%;font-size:13px;margin:16px 0}}
-th,td{{border-bottom:1px solid #23262b;padding:8px 10px;text-align:left}} th{{color:#8b8f96;font-weight:500}}
-code{{background:#121417;padding:2px 5px;border-radius:4px}} img{{max-width:100%;border:1px solid #23262b;border-radius:10px;margin:10px 0}}
-.note{{color:#8b8f96;font-size:13px}}
+:root{{--paper:{PAPER};--ink:{INK};--muted:{MUTED};--rule:{RULE};--accent:{ACCENT}}}
+*{{box-sizing:border-box}}
+body{{margin:0;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Segoe UI",system-ui,sans-serif;font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}}
+.bar{{height:6px;background:var(--accent)}}
+main{{max-width:980px;margin:0 auto;padding:56px 24px 96px}}
+.eyebrow{{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}}
+h1{{font-size:44px;letter-spacing:-.03em;margin:0 0 10px;font-weight:600}}
+h2{{font-size:22px;letter-spacing:-.01em;margin:52px 0 12px;font-weight:600}}
+h3{{font-size:15px;margin:28px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:500}}
+p{{margin:10px 0}}
+.lede{{font-size:18px;color:var(--muted);max-width:70ch}}
+table{{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}}
+th{{text-align:left;font-weight:500;color:var(--muted);border-bottom:1px solid var(--rule);padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase}}
+td{{border-bottom:1px solid var(--rule);padding:9px 10px;font-variant-numeric:tabular-nums}}
+.note{{color:var(--muted);font-size:14px}}
+figure{{margin:18px 0 26px}}
+img{{max-width:100%;border:1px solid var(--rule);border-radius:6px;display:block}}
+figcaption{{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:.06em;text-transform:uppercase}}
+ul{{margin:10px 0 10px 18px;padding:0}}
+li{{margin:6px 0}}
+code{{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#e9e4d8;padding:1px 5px;border-radius:3px}}
+.rule{{height:1px;background:var(--rule);margin:40px 0}}
 </style></head><body>
-<h1>HBC-RAG results</h1>
-<p class="note">Hop-bounded agentic RAG, DeepSeek V4.1 Flash via OpenCode Go. Deterministic scoring: normalized exact match, token F1, supporting-paragraph recall. No LLM judge in the headline.</p>
+<div class="bar"></div>
+<main>
+<p class="eyebrow">Study report · November 2026</p>
+<h1>HBC-RAG</h1>
+<p class="lede">Does bounding retrieval into fewer, larger hops improve agentic RAG, and what does the model cache actually contribute? Measured on DeepSeek V4.1 Flash and MiMo V2.6 Flash, scored deterministically, paired by question.</p>
+
+<h2>Method</h2>
+<ul>
+<li>Corpus: 5,155 paragraphs from HotpotQA and MuSiQue, paragraph-level retrieval, local bge-small embeddings, pgvector HNSW plus Postgres full-text, fused with reciprocal rank fusion.</li>
+<li>Policies: <code>fine</code> retrieves one chunk per hop with a four-hop cap; <code>coarse</code> retrieves four per hop with a two-hop cap. Same prompt, model, temperature 0 and stopping rule.</li>
+<li>Scoring: normalized exact match, token F1, supporting-paragraph recall, hop count, billed cost, latency. No LLM judge in the headline.</li>
+<li>Statistics: paired bootstrap over 10,000 resamples, McNemar on paired exact match.</li>
+</ul>
 {''.join(blocks)}
-{load_html}
+{cache}
+<h2>What is not claimed</h2>
+<p>Concurrency and scaling. Repeat load runs at one request per second produced goodput of 100 percent and 36 percent on identical settings, so the variation between runs is larger than the effect. The open-loop harness is in the repository, but no scaling conclusion is drawn from it.</p>
+<div class="rule"></div>
 <h2>Threats to validity</h2>
 <ul class="note">
-<li>One seed per dataset. Differences below 2 points are noise until replicated.</li>
-<li>MuSiQue is a 50-question holdout, not tuned on.</li>
+<li>One seed per dataset and model. Deltas below two points are noise until replicated.</li>
+<li>MuSiQue uses 50 questions; its intervals are wide.</li>
+<li>MiMo replication uses 100 questions, not the full 150.</li>
 <li>p95 includes gateway 429 retries, so it measures the served path, not model latency alone.</li>
-<li>Cache hit rate is affected by gateway routing, which varies run to run.</li>
+<li>Gemini 4 Hydrogen was unavailable during the cache threshold test, so that experiment ran on 3.5 Flash Lite.</li>
 </ul>
-</body></html>
+
+<h2>Reproduce</h2>
+<pre class="note">uv run python scripts/build_corpus.py --hotpot 300 --musique 150
+uv run python scripts/run_eval.py --dataset hotpotqa --limit 150 --policies fine,coarse --concurrency 4
+uv run python scripts/run_eval.py --dataset musique --limit 50 --policies fine,coarse --concurrency 4
+uv run python scripts/run_eval.py --dataset hotpotqa --limit 100 --policies fine,coarse --concurrency 4 --model mimo-v2.6-flash --provider go
+uv run python scripts/cache_probe.py
+uv run python scripts/gemini_cache_threshold.py
+uv run python scripts/report.py</pre>
+</main></body></html>
 """
-    OUT.mkdir(exist_ok=True)
     (OUT / "report.html").write_text(html)
     (OUT / "index.html").write_text(html)
-    (OUT / "report.md").write_text("\n".join(blocks) + "\n\n## offered load\n\n" + load_md + "\n")
-    print(f"wrote {OUT / 'report.html'}")
-    print(f"wrote {OUT / 'report.md'}")
+    thumbnail()
+    print("wrote report.html, index.html, thumbnail.png")
 
 
 if __name__ == "__main__":

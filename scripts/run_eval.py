@@ -130,7 +130,12 @@ async def run_policy(
         "wall_s": wall,
     }
     with open(out / "summary.json", "w") as handle:
-        json.dump({"run_id": run_id, "policy": policy_name, "dataset": dataset, **metrics}, handle, indent=2)
+        json.dump(
+            {"run_id": run_id, "policy": policy_name, "dataset": dataset,
+             "model": generator.model, "provider": generator.name, **metrics},
+            handle,
+            indent=2,
+        )
 
     await store.insert_run(
         RunMeta(
@@ -154,13 +159,15 @@ async def main() -> None:
     parser.add_argument("--policies", default="fine,coarse")
     parser.add_argument("--concurrency", type=int, default=8)
     parser.add_argument("--seed", type=int, default=13)
+    parser.add_argument("--model", default="")
+    parser.add_argument("--provider", default="")
     args = parser.parse_args()
 
     load_env()
     questions = load_questions(args.dataset, args.limit, args.seed)
     print(f"{len(questions)} questions from {args.dataset}")
     embedder = FastEmbed()
-    generator = make_generator()
+    generator = make_generator(args.model or None, provider=args.provider or None)
     store = await PgVectorStore().open()
     try:
         for name in [p.strip() for p in args.policies.split(",") if p.strip()]:

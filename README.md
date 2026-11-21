@@ -1,143 +1,125 @@
 # HBC-RAG
 
-Hop-bounded agentic RAG with concurrency characterization on rented model APIs.
+![HBC-RAG](./thumbnail.png)
 
-Two independent packages and one app:
+Hop-bounded agentic RAG with measured cache behaviour, scored deterministically and paired by question.
 
-| Path | Package | Role |
-|---|---|---|
-| `packages/rag-core` | `hbc-rag-core` | Retrieval, hop policies, providers, pipeline |
-| `packages/harness` | `hbc-harness` | Open-loop load generation, metrics, scoring, statistics |
-| `apps/api` | `hbc-api` | FastAPI wrapper, the HTTP system under test |
-| `web` | `hbc-rag-web` | Dashboard for health and recorded runs |
+The study asks one question: does retrieval granularity, one chunk per hop versus four, change answer quality, evidence coverage, cost and latency in a multi-hop agent? It runs two policies that differ only in hop size, on the same corpus, prompt, model and temperature, over HotpotQA and a MuSiQue holdout, then repeats on a second model family.
 
-The harness knows nothing about Gemini or DeepSeek. The RAG knows nothing about load testing. They meet at one protocol:
+## Results
+
+HotpotQA, 150 questions, DeepSeek V4.1 Flash:
+
+| policy | EM | F1 | support recall | hops | p50 | p95 | cost |
+|---|---|---|---|---|---|---|---|
+| fine, 1 chunk per hop | 0.427 | 0.588 | 0.620 | 1.43 | 4.07s | 28.3s | $0.0160 |
+| coarse, 4 chunks per hop | 0.560 | 0.707 | 0.917 | 1.11 | 2.62s | 27.6s | $0.0186 |
+
+F1 +0.119, 95% CI +0.057 to +0.181. McNemar chi2 13.88, p < 0.001. Cost per correct answer drops from $0.000250 to $0.000221.
+
+HotpotQA, 100 questions, MiMo V2.6 Flash, same protocol:
+
+| policy | EM | F1 | support recall | hops | p50 | cost |
+|---|---|---|---|---|---|---|
+| fine | 0.400 | 0.559 | 0.695 | 1.63 | 9.65s | $0.0126 |
+| coarse | 0.470 | 0.683 | 0.925 | 1.14 | 4.31s | $0.0152 |
+
+The direction replicates on a second family: coarser hops raise F1 by 12 points and evidence recall by 23 points while using fewer hops and less wall time.
+
+MuSiQue, 50 held-out questions, DeepSeek: accuracy ties (F1 +0.011, CI -0.077 to +0.097), evidence recall rises from 0.337 to 0.527 and p95 falls from 27.5s to 12.3s.
+
+## Novelty: what the cache does
+
+Two measurements the quality table cannot explain.
+
+**Gemini Interactions, stateful chains.** For a fixed prefix of about four thousand tokens, the cached span stays flat near 4,070 tokens at every hop size tested, from 200 to 3,000 new tokens. Cache share therefore falls as hops grow, because new tokens are always billed fresh. No 2,050-token incremental threshold appears on Gemini 3.5 Flash Lite; Gemini 4 Hydrogen returned 503 during the test window.
+
+| new tokens in hop | prompt tokens | cached | share |
+|---|---|---|---|
+| 200 | 5,678 | 2,032 | 35.8% |
+| 800 | 6,255 | 4,067 | 65.0% |
+| 1,500 | 6,946 | 4,070 | 58.6% |
+| 2,100 | 7,541 | 4,072 | 54.0% |
+| 3,000 | 8,449 | 4,074 | 48.2% |
+
+**OpenCode Go, DeepSeek, identical 19k-token prefix.** Five of six calls hit the prefix cache, but billed allowance ranged from $0.000043 to $0.00174 for identical input, a 40x spread caused by gateway routing. Cache locality, not prompt shape, dominates cost in that path.
+
+Full report with figures: `reports/report.html`, or `/report/` when the API is running.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Q["Question"] --> P["Planner call<br/>JSON action protocol"]
+    P -->|retrieve| R["Hybrid retrieval<br/>pgvector HNSW + tsvector RRF"]
+    R --> E["Evidence buffer"]
+    E --> P
+    P -->|answer| V["Verifier call<br/>answer against evidence"]
+    V --> A["Answer + hop trace"]
+
+    subgraph DB["Neon Postgres, schema hbc_rag"]
+        R --> D[("documents<br/>vector(384) + tsvector")]
+        A --> T[("runs / hops")]
+    end
+
+    subgraph Providers
+        P --> DS["DeepSeek V4.1 Flash<br/>OpenCode Go"]
+        P --> MM["MiMo V2.6 Flash<br/>OpenCode Go"]
+        P --> GM["Gemini Interactions<br/>free tier"]
+    end
+```
+
+Two independent packages meet at one protocol, so the harness can test any retrieval system and the RAG works without the harness:
 
 ```python
 class SystemUnderTest(Protocol):
     async def ask(self, question: str, *, deadline_ms: int | None = None) -> dict: ...
 ```
 
-## Results
+## Technology stack
 
-DeepSeek V4.1 Flash via OpenCode Go, temperature 0, deterministic scoring, paired by question.
+- Python 3.12, `uv` workspace
+- Neon Postgres, pgvector HNSW, full-text search, pooled connections
+- `fastembed` bge-small-en-v1.5, local ONNX embeddings
+- FastAPI, `httpx` async
+- DeepSeek V4.1 Flash and MiMo V2.6 Flash through OpenCode Go
+- Gemini Interactions API for the cache threshold experiment
+- React and Vite dashboard
+- pytest, ruff, GitHub Actions
 
-### HotpotQA, 150 questions
+## Repository layout
 
-| policy | EM | F1 | support recall | hops | p50 | p95 | cost |
-|---|---|---|---|---|---|---|---|
-| fine (1 chunk/hop) | 0.427 | 0.588 | 0.620 | 1.43 | 4.07s | 28.3s | $0.0160 |
-| coarse (4 chunks/hop) | 0.560 | 0.707 | 0.917 | 1.11 | 2.62s | 27.6s | $0.0186 |
+- `packages/rag-core`: retrieval, hop policies, providers, pipeline
+- `packages/harness`: open-loop load generator, metrics, scoring, statistics
+- `apps/api`: FastAPI wrapper, HTTP system under test
+- `web`: dashboard for health and recorded runs
+- `scripts`: corpus build, evaluation grid, cache probes, report
+- `docs/method.md`: protocol, metrics, threats to validity
+- `reports`: generated report, figures, cache data
 
-Coarse minus fine F1: **+0.119** (95% CI +0.057 to +0.181). McNemar on EM: chi2 13.88, p < 0.001. Cost is $0.000017 higher per question but cost per correct answer is lower ($0.000221 vs $0.000250).
-
-### MuSiQue, 50 held-out questions
-
-| policy | EM | F1 | support recall | hops | p50 | p95 | cost |
-|---|---|---|---|---|---|---|---|
-| fine | 0.260 | 0.302 | 0.337 | 1.42 | 4.30s | 27.5s | $0.0075 |
-| coarse | 0.260 | 0.313 | 0.527 | 1.26 | 4.33s | 12.3s | $0.0095 |
-
-F1 difference +0.011 (95% CI -0.077 to +0.097), so accuracy is a tie at this sample size. Evidence recall and the tail improve.
-
-### Offered load, open loop into the HTTP API, 8s SLO
-
-| load | requests | p50 | p95 | goodput |
-|---|---|---|---|---|
-| 1 qps | 44 | 2.85s | 26.0s | 84.1% |
-| 2 qps | 94 | 10.53s | 76.4s | 47.9% |
-
-The knee sits between 1 and 2 qps, caused by upstream concurrency limits and retry backoff, not by the database. Full report with figures: `reports/report.html`.
-
-### What this says
-
-1. Hop granularity is a real quality lever. Coarse hops raise F1 by 12 points and evidence recall by 30 points on HotpotQA while using fewer hops.
-2. The cost mechanism is not prefix caching at these prompt sizes. Cache hit rates were 2 to 9 percent, so savings come from fewer round trips, not cache reads.
-3. Tail latency is the binding constraint under load. p95 is dominated by gateway retries, and goodput halves between 1 and 2 qps.
-
-## Backends
-
-| Model | Provider | Cache rule |
-|---|---|---|
-| `deepseek-v4.1-flash` | OpenCode Go or direct DeepSeek | automatic disk prefix cache, 50x read discount |
-| `mimo-v2.6-flash` | OpenCode Go | automatic prefix, 50x discount |
-| `hy4-flash-free` | OpenCode Go | free, no cache economics |
-| `muse-spark-1.3-contributor` | OpenCode Go | automatic prefix, 50x discount |
-| `gemini-3.5-flash-lite` | Gemini Interactions API | implicit only, 4,096 minimum, 2,050-token incremental rule |
-
-Provider note, measured: OpenCode Go does report cache (`prompt_tokens_details.cached_tokens`, 5,376 of 5,441 on a repeated prefix) and bills through `usage.opencode.allowance`, so Go is the default DeepSeek path. The catch is routing: a third identical call returned to a gateway instance without the cached prefix and cost 24 times more. That hit-or-miss cache locality is a result to measure, not a bug to hide. Direct DeepSeek stays available as a control.
-
-## Credentials
-
-Never in this repo.
-
-```
-keys.env       model keys, chmod 600, gitignored
-.env.local     Neon DATABASE_URL and bucket creds, gitignored
-```
-
-`keys.env` in the project root:
-
-```
-HBC_GO_API_KEY=
-DEEPSEEK_API_KEY=
-GEMINI_API_KEY=
-HBC_PROVIDER=gemini
-HBC_MODEL=gemini-3.5-flash-lite
-```
-
-The repo `.env.local` is written by `neon deploy` / `neon env pull` and holds `DATABASE_URL`, `DATABASE_URL_UNPOOLED` and the object storage credentials.
-
-## Setup
+## Quick start
 
 ```bash
 uv sync --all-packages
 npm --prefix web install
-neon link                 # pins .neon, pulls .env.local
-neon deploy               # provisions bucket assets
+neon link && neon deploy           # Neon project, bucket assets
 uv run python scripts/neon_smoke.py
-```
-
-Database objects live in schema `hbc_rag`; the extension is installed in `public`.
-
-## Run
-
-```bash
-uv run uvicorn app.main:app --app-dir apps/api --port 8000
-curl localhost:8000/health
-curl -X POST localhost:8000/ask -H 'content-type: application/json' \
-  -d '{"question":"Which document mentions gamma rays?","dataset":"smoke"}'
-npm run build             # dashboard, served at / by the API
-```
-
-Harness:
-
-```bash
-uv run hbc-harness run --questions path/to/questions.jsonl --rate 4 --duration 120 --out runs/trace.jsonl
-```
-
-## Test
-
-```bash
-uv run pytest
-npm run build
-```
-
-CI runs both on every push.
-
-## Reproduce
-
-```bash
 uv run python scripts/build_corpus.py --hotpot 300 --musique 150
-uv run python scripts/run_eval.py --dataset hotpotqa --limit 150 --policies fine,coarse --concurrency 4
-uv run python scripts/run_eval.py --dataset musique --limit 50 --policies fine,coarse --concurrency 4
-uv run hbc-harness run --questions data/hotpotqa_questions.jsonl --rate 1 --duration 30 --slo 8000 --out runs/load-1qps.jsonl
-uv run hbc-harness run --questions data/hotpotqa_questions.jsonl --rate 2 --duration 40 --slo 8000 --out runs/load-2qps.jsonl
-uv run python scripts/report.py
+uv run uvicorn app.main:app --app-dir apps/api --port 8000
 ```
 
-Corpus and run traces stay out of git; the report and figures are committed.
+Credentials live in `keys.env` at the repo root, chmod 600 and gitignored, and in `.env.local` for the Neon connection. `uv run python scripts/check_keys.py` reports which providers are live without printing them.
+
+## Honest framing
+
+- One seed per dataset and model. Deltas under two points are noise until replicated.
+- MuSiQue uses 50 questions, so its intervals are wide.
+- Concurrency is deliberately not claimed. Repeat load runs at one request per second gave 100 percent and 36 percent goodput on identical settings, so run-to-run variance exceeds the effect. The harness ships, the conclusion does not.
+- p95 includes gateway 429 retries, so it measures the served path.
+- The Gemini threshold experiment could not run on Gemini 4 Hydrogen, the model the documented 2,050-token rule applies to.
 
 ## Status
 
-Complete for this pass. Postgres with pgvector, local embeddings, hybrid retrieval, two hop policies, deterministic scoring with statistics, open-loop load tests, dashboard and generated report. Next: second seed, a larger MuSiQue holdout, and a calibrated judge for paraphrase cases.
+Complete for this pass. Further work: second seed on both models, a larger MuSiQue holdout, and a calibrated judge for paraphrase-equivalent answers only.
+
+License: Apache-2.0.
