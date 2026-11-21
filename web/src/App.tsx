@@ -42,6 +42,7 @@ export default function App() {
         <p className="eyebrow">Hop-bounded agentic RAG</p>
         <h1>HBC-RAG</h1>
         <p className="sub">Load and cache characterization on rented model APIs.</p>
+        <p className="sub"><a href="/report/">Read the results report</a></p>
       </header>
 
       {error && <div className="banner error">API unreachable: {error}</div>}

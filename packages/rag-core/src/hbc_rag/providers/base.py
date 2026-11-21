@@ -16,6 +16,7 @@ class Generation:
     raw: dict[str, Any] = field(default_factory=dict)
     interaction_id: str | None = None
     billing_usd: float = 0.0
+    retries: int = 0
 
 
 class Generator(Protocol):

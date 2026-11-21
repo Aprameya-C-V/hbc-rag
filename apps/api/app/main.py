@@ -161,6 +161,10 @@ async def ask(request: AskRequest) -> dict[str, Any]:
     }
 
 
+reports = ROOT / "reports"
+if reports.exists():
+    app.mount("/report", StaticFiles(directory=reports, html=True), name="report")
+
 dist = ROOT / "web" / "dist"
 if dist.exists():
     app.mount("/", StaticFiles(directory=dist, html=True), name="web")

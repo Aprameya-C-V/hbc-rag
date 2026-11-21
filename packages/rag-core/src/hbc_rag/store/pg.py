@@ -67,7 +67,7 @@ class PgVectorStore:
             async with conn.cursor() as cur:
                 await cur.executemany(
                     """
-                    insert into documents (dataset, doc_key, title, body, embedding)
+                    insert into hbc_rag.documents (dataset, doc_key, title, body, embedding)
                     values (%s, %s, %s, %s, %s::vector)
                     on conflict (doc_key) do update
                       set title = excluded.title,
@@ -93,12 +93,12 @@ class PgVectorStore:
         sql = """
         with dense as (
           select id, row_number() over (order by embedding <=> %(vec)s::vector) as r
-          from documents where dataset = %(dataset)s
+          from hbc_rag.documents where dataset = %(dataset)s
           order by embedding <=> %(vec)s::vector limit %(candidates)s
         ), lex as (
           select id, row_number() over (
                    order by ts_rank_cd(tsv, plainto_tsquery('english', %(q)s)) desc) as r
-          from documents
+          from hbc_rag.documents
           where dataset = %(dataset)s and tsv @@ plainto_tsquery('english', %(q)s)
           limit %(candidates)s
         ), fused as (
@@ -107,7 +107,7 @@ class PgVectorStore:
           from dense d full outer join lex l on d.id = l.id
         )
         select doc.id, doc.doc_key, doc.title, doc.body, f.score
-        from fused f join documents doc on doc.id = f.id
+        from fused f join hbc_rag.documents doc on doc.id = f.id
         order by f.score desc limit %(limit)s
         """
         params: dict[str, Any] = {
@@ -128,7 +128,7 @@ class PgVectorStore:
     async def get_document(self, doc_id: int) -> dict[str, Any] | None:
         async with self._pool.connection() as conn:
             cur = await conn.execute(
-                "select id, dataset, doc_key, title, body, embedding::text as embedding from documents where id = %s",
+                "select id, dataset, doc_key, title, body, embedding::text as embedding from hbc_rag.documents where id = %s",
                 (doc_id,),
             )
             row = await cur.fetchone()
@@ -141,9 +141,9 @@ class PgVectorStore:
     async def count_documents(self, dataset: str | None = None) -> int:
         async with self._pool.connection() as conn:
             if dataset:
-                cur = await conn.execute("select count(*) as n from documents where dataset = %s", (dataset,))
+                cur = await conn.execute("select count(*) as n from hbc_rag.documents where dataset = %s", (dataset,))
             else:
-                cur = await conn.execute("select count(*) as n from documents")
+                cur = await conn.execute("select count(*) as n from hbc_rag.documents")
             row = await cur.fetchone()
         return int(row["n"])
 
@@ -151,7 +151,7 @@ class PgVectorStore:
         async with self._pool.connection() as conn:
             await conn.execute(
                 """
-                insert into runs (id, model, provider, policy, dataset, created_at, metrics, tags)
+                insert into hbc_rag.runs (id, model, provider, policy, dataset, created_at, metrics, tags)
                 values (%s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (id) do update set metrics = excluded.metrics
                 """,
@@ -174,7 +174,7 @@ class PgVectorStore:
             async with conn.cursor() as cur:
                 await cur.executemany(
                     """
-                    insert into hops (run_id, question_id, hop_index, query, retrieved,
+                    insert into hbc_rag.hops (run_id, question_id, hop_index, query, retrieved,
                                       prompt_tokens, cached_tokens, completion_tokens, latency_ms, decision)
                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
@@ -199,7 +199,7 @@ class PgVectorStore:
     async def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
         async with self._pool.connection() as conn:
             cur = await conn.execute(
-                "select id, model, provider, policy, dataset, created_at, metrics from runs order by created_at desc limit %s",
+                "select id, model, provider, policy, dataset, created_at, metrics from hbc_rag.runs order by created_at desc limit %s",
                 (limit,),
             )
             rows = await cur.fetchall()

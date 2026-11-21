@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import random
 import time
 
 import httpx
@@ -41,11 +43,14 @@ class OpenAICompat:
         api_key: str | None = None,
         name: str = "opencode-go",
         timeout: float = 120.0,
+        max_retries: int = 6,
     ):
         self.model = model
         self.name = name
         self.base_url = (base_url or go_base_url()).rstrip("/")
         self.api_key = api_key or go_api_key()
+        self.max_retries = max_retries
+        self.retries = 0
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout, connect=15.0),
             headers={
@@ -76,7 +81,17 @@ class OpenAICompat:
             "stream": False,
         }
         started = time.perf_counter()
-        response = await self._client.post(f"{self.base_url}/chat/completions", json=body)
+        response = None
+        for attempt in range(self.max_retries + 1):
+            response = await self._client.post(f"{self.base_url}/chat/completions", json=body)
+            if response.status_code not in (408, 429, 500, 502, 503, 504):
+                break
+            if attempt == self.max_retries:
+                break
+            self.retries += 1
+            retry_after = response.headers.get("retry-after")
+            delay = float(retry_after) if retry_after else min(2 ** attempt, 20)
+            await asyncio.sleep(delay + random.random() * 0.5)
         elapsed = (time.perf_counter() - started) * 1000
         response.raise_for_status()
         payload = response.json()
@@ -94,4 +109,5 @@ class OpenAICompat:
             model=self.model,
             raw=payload,
             billing_usd=billing,
+            retries=self.retries,
         )

@@ -18,6 +18,43 @@ class SystemUnderTest(Protocol):
     async def ask(self, question: str, *, deadline_ms: int | None = None) -> dict: ...
 ```
 
+## Results
+
+DeepSeek V4.1 Flash via OpenCode Go, temperature 0, deterministic scoring, paired by question.
+
+### HotpotQA, 150 questions
+
+| policy | EM | F1 | support recall | hops | p50 | p95 | cost |
+|---|---|---|---|---|---|---|---|
+| fine (1 chunk/hop) | 0.427 | 0.588 | 0.620 | 1.43 | 4.07s | 28.3s | $0.0160 |
+| coarse (4 chunks/hop) | 0.560 | 0.707 | 0.917 | 1.11 | 2.62s | 27.6s | $0.0186 |
+
+Coarse minus fine F1: **+0.119** (95% CI +0.057 to +0.181). McNemar on EM: chi2 13.88, p < 0.001. Cost is $0.000017 higher per question but cost per correct answer is lower ($0.000221 vs $0.000250).
+
+### MuSiQue, 50 held-out questions
+
+| policy | EM | F1 | support recall | hops | p50 | p95 | cost |
+|---|---|---|---|---|---|---|---|
+| fine | 0.260 | 0.302 | 0.337 | 1.42 | 4.30s | 27.5s | $0.0075 |
+| coarse | 0.260 | 0.313 | 0.527 | 1.26 | 4.33s | 12.3s | $0.0095 |
+
+F1 difference +0.011 (95% CI -0.077 to +0.097), so accuracy is a tie at this sample size. Evidence recall and the tail improve.
+
+### Offered load, open loop into the HTTP API, 8s SLO
+
+| load | requests | p50 | p95 | goodput |
+|---|---|---|---|---|
+| 1 qps | 44 | 2.85s | 26.0s | 84.1% |
+| 2 qps | 94 | 10.53s | 76.4s | 47.9% |
+
+The knee sits between 1 and 2 qps, caused by upstream concurrency limits and retry backoff, not by the database. Full report with figures: `reports/report.html`.
+
+### What this says
+
+1. Hop granularity is a real quality lever. Coarse hops raise F1 by 12 points and evidence recall by 30 points on HotpotQA while using fewer hops.
+2. The cost mechanism is not prefix caching at these prompt sizes. Cache hit rates were 2 to 9 percent, so savings come from fewer round trips, not cache reads.
+3. Tail latency is the binding constraint under load. p95 is dominated by gateway retries, and goodput halves between 1 and 2 qps.
+
 ## Backends
 
 | Model | Provider | Cache rule |
@@ -88,6 +125,19 @@ npm run build
 
 CI runs both on every push.
 
+## Reproduce
+
+```bash
+uv run python scripts/build_corpus.py --hotpot 300 --musique 150
+uv run python scripts/run_eval.py --dataset hotpotqa --limit 150 --policies fine,coarse --concurrency 4
+uv run python scripts/run_eval.py --dataset musique --limit 50 --policies fine,coarse --concurrency 4
+uv run hbc-harness run --questions data/hotpotqa_questions.jsonl --rate 1 --duration 30 --slo 8000 --out runs/load-1qps.jsonl
+uv run hbc-harness run --questions data/hotpotqa_questions.jsonl --rate 2 --duration 40 --slo 8000 --out runs/load-2qps.jsonl
+uv run python scripts/report.py
+```
+
+Corpus and run traces stay out of git; the report and figures are committed.
+
 ## Status
 
-P1 wiring is live: Neon Postgres with pgvector and hybrid retrieval, object storage roundtrip, Gemini Interactions end-to-end, runs and hops persisted. Corpus build and the load grid are next.
+Complete for this pass. Postgres with pgvector, local embeddings, hybrid retrieval, two hop policies, deterministic scoring with statistics, open-loop load tests, dashboard and generated report. Next: second seed, a larger MuSiQue holdout, and a calibrated judge for paraphrase cases.

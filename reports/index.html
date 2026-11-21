@@ -1,0 +1,48 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>HBC-RAG results</title>
+<style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:980px;margin:48px auto;padding:0 20px;background:#0b0c0e;color:#e8e6e1}
+h1,h2{letter-spacing:-0.02em} table{border-collapse:collapse;width:100%;font-size:13px;margin:16px 0}
+th,td{border-bottom:1px solid #23262b;padding:8px 10px;text-align:left} th{color:#8b8f96;font-weight:500}
+code{background:#121417;padding:2px 5px;border-radius:4px} img{max-width:100%;border:1px solid #23262b;border-radius:10px;margin:10px 0}
+.note{color:#8b8f96;font-size:13px}
+</style></head><body>
+<h1>HBC-RAG results</h1>
+<p class="note">Hop-bounded agentic RAG, DeepSeek V4.1 Flash via OpenCode Go. Deterministic scoring: normalized exact match, token F1, supporting-paragraph recall. No LLM judge in the headline.</p>
+## hotpotqa
+
+| policy | n | em | f1 | support_recall | hops_mean | cache_hit_rate | cost_usd | latency_p50_ms | latency_p95_ms |
+|---|---|---|---|---|---|---|---|---|---|
+| fine | 150 | 0.427 | 0.588 | 0.620 | 1.43 | 8.7% | $0.01602 | 4.07s | 28.32s |
+| coarse | 150 | 0.560 | 0.707 | 0.917 | 1.11 | 2.1% | $0.01857 | 2.62s | 27.63s |
+
+Paired over 150 questions: coarse minus fine F1 +0.119 (95% CI +0.057 to +0.181); McNemar EM chi2 13.88, p 0.000; cost delta $+0.000017 per question.
+
+![hotpotqa](figures/hotpotqa-quality.png)
+
+![hotpotqa](figures/hotpotqa-serving.png)
+## musique
+
+| policy | n | em | f1 | support_recall | hops_mean | cache_hit_rate | cost_usd | latency_p50_ms | latency_p95_ms |
+|---|---|---|---|---|---|---|---|---|---|
+| fine | 50 | 0.260 | 0.302 | 0.337 | 1.42 | 0.0% | $0.00751 | 4.30s | 27.51s |
+| coarse | 50 | 0.260 | 0.313 | 0.527 | 1.26 | 0.0% | $0.00949 | 4.33s | 12.34s |
+
+Paired over 50 questions: coarse minus fine F1 +0.011 (95% CI -0.077 to +0.097); McNemar EM chi2 0.25, p 0.617; cost delta $+0.000039 per question.
+
+![musique](figures/musique-quality.png)
+
+![musique](figures/musique-serving.png)
+
+<h2>Offered load</h2><p class="note">Open-loop Poisson arrivals against the HTTP API. Latency measured from arrival, not send. Goodput is the share of requests inside an 8s SLO.</p><img src="figures/load-curve.png" /><pre>| offered load | requests | p50 | p95 | goodput at 8s |
+|---|---|---|---|---|
+| 1 qps | 44 | 2.85s | 26.02s | 84.1% |
+| 2 qps | 94 | 10.53s | 76.36s | 47.9% |</pre>
+<h2>Threats to validity</h2>
+<ul class="note">
+<li>One seed per dataset. Differences below 2 points are noise until replicated.</li>
+<li>MuSiQue is a 50-question holdout, not tuned on.</li>
+<li>p95 includes gateway 429 retries, so it measures the served path, not model latency alone.</li>
+<li>Cache hit rate is affected by gateway routing, which varies run to run.</li>
+</ul>
+</body></html>
