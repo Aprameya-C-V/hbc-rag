@@ -163,6 +163,83 @@ def cache_sections():
 """
 
 
+
+def taxonomy(policies):
+    head = ["policy", "n", "correct", "evidence full, answer wrong", "evidence partial", "no evidence"]
+    rows = []
+    for name in ("fine", "coarse"):
+        if name not in policies:
+            continue
+        rs = list(policies[name][1].values())
+        correct = sum(1 for r in rs if r["em"])
+        full_wrong = sum(1 for r in rs if not r["em"] and r["support_recall"] >= 0.999)
+        partial = sum(1 for r in rs if not r["em"] and 0 < r["support_recall"] < 0.999)
+        missing = sum(1 for r in rs if not r["em"] and r["support_recall"] == 0)
+        rows.append((name, len(rs), correct, full_wrong, partial, missing))
+    html = "<table><thead><tr>" + "".join(f"<th>{h}</th>" for h in head) + "</tr></thead><tbody>"
+    for row in rows:
+        html += "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>"
+    return html + "</tbody></table>"
+
+
+def examples(policies, limit=3):
+    if "coarse" not in policies:
+        return ""
+    rs = list(policies["coarse"][1].values())
+    picks = [r for r in rs if not r["em"] and r["support_recall"] >= 0.999][:limit]
+    if not picks:
+        return ""
+    html = "<ul>"
+    for r in picks:
+        q = r["question"][:150]
+        a = (r["answer"] or "(empty)")[:90]
+        g = (r["gold"] or "")[:90]
+        html += f"<li><b>{q}</b><br><span class=\"note\">gold: {g} · answered: {a} · hops {r['hops']}</span></li>"
+    return html + "</ul>"
+
+
+def hop_figure(tag, policies):
+    names = [p for p in ("fine", "coarse") if p in policies]
+    fig, ax = plt.subplots(figsize=(5.2, 2.8))
+    width = 0.38
+    for i, name in enumerate(names):
+        rs = list(policies[name][1].values())
+        counts = [sum(1 for r in rs if r["hops"] == h) for h in (1, 2, 3, 4)]
+        ax.bar([x + i * width for x in range(4)], counts, width=width,
+               color=[FILL, ACCENT][i], label=name)
+    ax.set_xticks([x + width / 2 for x in range(4)])
+    ax.set_xticklabels(["1 hop", "2", "3", "4"])
+    ax.set_ylabel("questions")
+    ax.set_title("Hops used per question", fontsize=9, color=MUTED)
+    ax.legend(frameon=False, fontsize=8)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(FIGS / f"{tag}-hops.png", dpi=170)
+    plt.close(fig)
+    return f"{tag}-hops.png"
+
+
+def cost_quality(groups):
+    points = []
+    for (dataset, model), policies in groups.items():
+        for name, (summary, _) in policies.items():
+            points.append((f"{dataset[:4]}/{model.split('-')[0]}/{name}", summary["f1"],
+                           summary["cost_usd"] / max(1, summary["questions"]), summary["em"]))
+    fig, ax = plt.subplots(figsize=(6.4, 3.4))
+    for label, f1, cost, em in points:
+        color = ACCENT if "/coarse" in label else FILL
+        ax.scatter(cost * 1000, f1, s=60, color=color, edgecolor=INK, linewidth=0.4, zorder=3)
+        ax.annotate(label, (cost * 1000, f1), textcoords="offset points", xytext=(6, 4), fontsize=7, color=MUTED)
+    ax.set_xlabel("cost per question (milli-USD)", fontsize=8)
+    ax.set_ylabel("token F1", fontsize=8)
+    ax.set_title("Cost versus quality", fontsize=9, color=MUTED)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(color=RULE, linewidth=0.6, zorder=0)
+    fig.tight_layout()
+    fig.savefig(FIGS / "cost-quality.png", dpi=170)
+    plt.close(fig)
+    return "cost-quality.png"
+
 def thumbnail():
     fig, ax = plt.subplots(figsize=(12, 6.3))
     ax.set_xlim(0, 12)
@@ -204,6 +281,11 @@ def main() -> None:
 """)
 
     cache = cache_sections()
+    first = groups.get(("hotpotqa", "deepseek-v4.1-flash"), {})
+    tax = taxonomy(first) if first else ""
+    ex = examples(first) if first else ""
+    hops = hop_figure("hotpotqa-deepseek", first) if first else ""
+    cq = cost_quality(groups) if groups else ""
 
     html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -245,11 +327,35 @@ code{{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#e9e4d8
 <li>Scoring: normalized exact match, token F1, supporting-paragraph recall, hop count, billed cost, latency. No LLM judge in the headline.</li>
 <li>Statistics: paired bootstrap over 10,000 resamples, McNemar on paired exact match.</li>
 </ul>
-{''.join(blocks)}
+<h2>Where the gap comes from</h2>
+<p>Failure taxonomy for HotpotQA on DeepSeek. "Evidence full, answer wrong" is a reasoning failure with the right paragraphs in context; "evidence partial" and "no evidence" are retrieval failures.</p>
+{tax}
+<p class="note">Coarse cuts retrieval failures sharply (partial evidence 52 to 10, no evidence 14 to 4) but exposes reader failures (full evidence, wrong answer 20 to 52). Once the right paragraphs are in context, the remaining errors are answer-extraction errors, so the next gain is in the reader prompt rather than in retrieval.</p>
+<figure><img src="figures/{hops}" alt="hops"><figcaption>Hop distribution by policy</figcaption></figure>
+<h3>Examples of evidence-complete failures</h3>
+{ex}
+
+<h2>Cost versus quality</h2>
+<figure><img src="figures/{cq}" alt="cost quality"><figcaption>Every run, cost per question against token F1. Green marks coarse.</figcaption></figure>
+
 {cache}
+
+<h2>Related work</h2>
+<p class="note">Agentic RAG costs up to 3.6x standard RAG (ACL 2026 industry track, arXiv 2601.07711). RAG serving work such as RAG-Stack (arXiv 2608.03487) and RAGPulse (EMNLP 2026 Findings) targets self-hosted clusters and production trace reuse. Evaluation-budget work (arXiv 2610.05034) shows more questions beat more repeats at fixed token spend, which is why this study reports one seed over paired questions rather than repeats. SLA routing work (PROTEUS, arXiv 2601.19402) routes across models, not across hops. This study sits between them: hop granularity on a managed API, deterministic scoring, and a cache probe that measures the mechanism instead of assuming it.</p>
 <h2>What is not claimed</h2>
 <p>Concurrency and scaling. Repeat load runs at one request per second produced goodput of 100 percent and 36 percent on identical settings, so the variation between runs is larger than the effect. The open-loop harness is in the repository, but no scaling conclusion is drawn from it.</p>
 <div class="rule"></div>
+<h2>What is strong, what remains weak</h2>
+<p><b>Strong.</b> One-variable comparison, deterministic scoring, paired intervals, a replicated second model, a null result published rather than smoothed, and cache measurements that explain the cost story.</p>
+<p><b>Weak.</b> One seed. Small MuSiQue holdout. The Gemini threshold experiment ran on the wrong model because Hydrogen was unavailable. Prompts are short enough that prefix caching rarely fires, so the study cannot claim cache savings at production context sizes. Concurrency is unproven and excluded.</p>
+
+<h2>Resume-ready impact</h2>
+<ol>
+<li>Built a hop-bounded agentic RAG study over 5,155 paragraphs and 300 questions: coarse retrieval batches raised F1 by 12 points and supporting-paragraph recall by 30 points while cutting mean hops from 1.43 to 1.11 and p50 from 4.07s to 2.62s.</li>
+<li>Replicated on MiMo V2.6 Flash with F1 0.559 to 0.683 and evidence recall 0.695 to 0.925, confirming the effect is not provider-specific.</li>
+<li>Measured cache behaviour instead of assuming it: a flat 4,070-token cached span across hop sizes on the Gemini Interactions API and a 40x billed-cost spread on identical prefixes through an OpenAI-compatible gateway, with a paired MuSiQue null result reported honestly.</li>
+</ol>
+
 <h2>Threats to validity</h2>
 <ul class="note">
 <li>One seed per dataset and model. Deltas below two points are noise until replicated.</li>

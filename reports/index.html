@@ -38,24 +38,16 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#e9e4d8;
 <li>Scoring: normalized exact match, token F1, supporting-paragraph recall, hop count, billed cost, latency. No LLM judge in the headline.</li>
 <li>Statistics: paired bootstrap over 10,000 resamples, McNemar on paired exact match.</li>
 </ul>
+<h2>Where the gap comes from</h2>
+<p>Failure taxonomy for HotpotQA on DeepSeek. "Evidence full, answer wrong" is a reasoning failure with the right paragraphs in context; "evidence partial" and "no evidence" are retrieval failures.</p>
+<table><thead><tr><th>policy</th><th>n</th><th>correct</th><th>evidence full, answer wrong</th><th>evidence partial</th><th>no evidence</th></tr></thead><tbody><tr><td>fine</td><td>150</td><td>64</td><td>20</td><td>52</td><td>14</td></tr><tr><td>coarse</td><td>150</td><td>84</td><td>52</td><td>10</td><td>4</td></tr></tbody></table>
+<p class="note">Coarse cuts retrieval failures sharply (partial evidence 52 to 10, no evidence 14 to 4) but exposes reader failures (full evidence, wrong answer 20 to 52). Once the right paragraphs are in context, the remaining errors are answer-extraction errors, so the next gain is in the reader prompt rather than in retrieval.</p>
+<figure><img src="figures/hotpotqa-deepseek-hops.png" alt="hops"><figcaption>Hop distribution by policy</figcaption></figure>
+<h3>Examples of evidence-complete failures</h3>
+<ul><li><b>The first Latina Supreme Court Justice was part of the majority decision of a case that upheld which previous supreme court case?</b><br><span class="note">gold: Apprendi v. New Jersey · answered: (empty) · hops 1</span></li><li><b>What do Eragrostis and Rhexia have in common?</b><br><span class="note">gold: plant genus · answered: both are plant genera · hops 1</span></li><li><b>If the Charhki  Dadri crash was less dangerous than the Tenerife airport disaster, which occured firat? </b><br><span class="note">gold: On March 27, 1977, two Boeing 747 passenger jets, KLM Flight 4805 and Pan Am Flight 1736,  · answered: Tenerife airport disaster · hops 1</span></li></ul>
 
-<h2>hotpotqa, deepseek-v4.1-flash</h2>
-<table><thead><tr><th>policy</th><th>n</th><th>EM</th><th>F1</th><th>support recall</th><th>hops</th><th>p50</th><th>p95</th><th>cost</th></tr></thead><tbody><tr><td>fine</td><td>150</td><td>0.427</td><td>0.588</td><td>0.620</td><td>1.43</td><td>4.07s</td><td>28.32s</td><td>$0.01602</td></tr><tr><td>coarse</td><td>150</td><td>0.560</td><td>0.707</td><td>0.917</td><td>1.11</td><td>2.62s</td><td>27.63s</td><td>$0.01857</td></tr></tbody></table>
-<p class="note">Paired over 150 questions: coarse minus fine F1 <b>+0.119</b> (95% CI +0.057 to +0.181). McNemar on exact match chi2 13.88, p 0.000. Cost per correct answer $0.000250 fine, $0.000221 coarse.</p>
-<figure><img src="figures/hotpotqa-deepseek-quality.png" alt="quality"><figcaption>Answer quality and evidence coverage</figcaption></figure>
-<figure><img src="figures/hotpotqa-deepseek-serving.png" alt="serving"><figcaption>Latency and cost</figcaption></figure>
-
-<h2>musique, deepseek-v4.1-flash</h2>
-<table><thead><tr><th>policy</th><th>n</th><th>EM</th><th>F1</th><th>support recall</th><th>hops</th><th>p50</th><th>p95</th><th>cost</th></tr></thead><tbody><tr><td>fine</td><td>50</td><td>0.260</td><td>0.302</td><td>0.337</td><td>1.42</td><td>4.30s</td><td>27.51s</td><td>$0.00751</td></tr><tr><td>coarse</td><td>50</td><td>0.260</td><td>0.313</td><td>0.527</td><td>1.26</td><td>4.33s</td><td>12.34s</td><td>$0.00949</td></tr></tbody></table>
-<p class="note">Paired over 50 questions: coarse minus fine F1 <b>+0.011</b> (95% CI -0.077 to +0.097). McNemar on exact match chi2 0.25, p 0.617. Cost per correct answer $0.000578 fine, $0.000730 coarse.</p>
-<figure><img src="figures/musique-deepseek-quality.png" alt="quality"><figcaption>Answer quality and evidence coverage</figcaption></figure>
-<figure><img src="figures/musique-deepseek-serving.png" alt="serving"><figcaption>Latency and cost</figcaption></figure>
-
-<h2>hotpotqa, mimo-v2.6-flash</h2>
-<table><thead><tr><th>policy</th><th>n</th><th>EM</th><th>F1</th><th>support recall</th><th>hops</th><th>p50</th><th>p95</th><th>cost</th></tr></thead><tbody><tr><td>fine</td><td>100</td><td>0.400</td><td>0.559</td><td>0.695</td><td>1.63</td><td>9.65s</td><td>24.43s</td><td>$0.01256</td></tr><tr><td>coarse</td><td>100</td><td>0.470</td><td>0.683</td><td>0.925</td><td>1.14</td><td>4.31s</td><td>14.29s</td><td>$0.01523</td></tr></tbody></table>
-<p class="note">Paired over 100 questions: coarse minus fine F1 <b>+0.125</b> (95% CI +0.060 to +0.193). McNemar on exact match chi2 3.27, p 0.070. Cost per correct answer $0.000314 fine, $0.000324 coarse.</p>
-<figure><img src="figures/hotpotqa-mimo-quality.png" alt="quality"><figcaption>Answer quality and evidence coverage</figcaption></figure>
-<figure><img src="figures/hotpotqa-mimo-serving.png" alt="serving"><figcaption>Latency and cost</figcaption></figure>
+<h2>Cost versus quality</h2>
+<figure><img src="figures/cost-quality.png" alt="cost quality"><figcaption>Every run, cost per question against token F1. Green marks coarse.</figcaption></figure>
 
 
 <h2>Novelty: what the cache actually does</h2>
@@ -69,9 +61,23 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#e9e4d8;
 <p>5 of 6 calls hit the prefix cache. Billed allowance ranged from $0.00004329 to $0.00173565 for identical input, a 40x spread caused by gateway routing rather than by the prompt.</p>
 <table><thead><tr><th>attempt</th><th>prompt</th><th>cached</th><th>allowance USD</th></tr></thead><tbody><tr><td>1</td><td>19245</td><td>0</td><td>0.00173565</td></tr><tr><td>2</td><td>19245</td><td>19200</td><td>0.00004725</td></tr><tr><td>3</td><td>19245</td><td>19200</td><td>0.00004401</td></tr><tr><td>4</td><td>19245</td><td>19200</td><td>0.00004725</td></tr><tr><td>5</td><td>19245</td><td>19200</td><td>0.00004329</td></tr><tr><td>6</td><td>19245</td><td>19200</td><td>0.00004437</td></tr></tbody></table>
 
+
+<h2>Related work</h2>
+<p class="note">Agentic RAG costs up to 3.6x standard RAG (ACL 2026 industry track, arXiv 2601.07711). RAG serving work such as RAG-Stack (arXiv 2608.03487) and RAGPulse (EMNLP 2026 Findings) targets self-hosted clusters and production trace reuse. Evaluation-budget work (arXiv 2610.05034) shows more questions beat more repeats at fixed token spend, which is why this study reports one seed over paired questions rather than repeats. SLA routing work (PROTEUS, arXiv 2601.19402) routes across models, not across hops. This study sits between them: hop granularity on a managed API, deterministic scoring, and a cache probe that measures the mechanism instead of assuming it.</p>
 <h2>What is not claimed</h2>
 <p>Concurrency and scaling. Repeat load runs at one request per second produced goodput of 100 percent and 36 percent on identical settings, so the variation between runs is larger than the effect. The open-loop harness is in the repository, but no scaling conclusion is drawn from it.</p>
 <div class="rule"></div>
+<h2>What is strong, what remains weak</h2>
+<p><b>Strong.</b> One-variable comparison, deterministic scoring, paired intervals, a replicated second model, a null result published rather than smoothed, and cache measurements that explain the cost story.</p>
+<p><b>Weak.</b> One seed. Small MuSiQue holdout. The Gemini threshold experiment ran on the wrong model because Hydrogen was unavailable. Prompts are short enough that prefix caching rarely fires, so the study cannot claim cache savings at production context sizes. Concurrency is unproven and excluded.</p>
+
+<h2>Resume-ready impact</h2>
+<ol>
+<li>Built a hop-bounded agentic RAG study over 5,155 paragraphs and 300 questions: coarse retrieval batches raised F1 by 12 points and supporting-paragraph recall by 30 points while cutting mean hops from 1.43 to 1.11 and p50 from 4.07s to 2.62s.</li>
+<li>Replicated on MiMo V2.6 Flash with F1 0.559 to 0.683 and evidence recall 0.695 to 0.925, confirming the effect is not provider-specific.</li>
+<li>Measured cache behaviour instead of assuming it: a flat 4,070-token cached span across hop sizes on the Gemini Interactions API and a 40x billed-cost spread on identical prefixes through an OpenAI-compatible gateway, with a paired MuSiQue null result reported honestly.</li>
+</ol>
+
 <h2>Threats to validity</h2>
 <ul class="note">
 <li>One seed per dataset and model. Deltas below two points are noise until replicated.</li>
