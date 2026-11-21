@@ -94,6 +94,7 @@ class RagPipeline:
     async def ask(self, question: str, *, question_id: str = "") -> RagResult:
         started = time.perf_counter()
         usage = Usage()
+        cost = 0.0
         hops: list[Hop] = []
         evidence: list[dict] = []
         query = question
@@ -116,6 +117,7 @@ class RagPipeline:
                 max_tokens=256,
             )
             usage = usage.add(generation.usage)
+            cost += generation.billing_usd or self._cost(generation.usage)
             parsed = _extract_json(generation.text)
             decision = parsed.get("action", "answer")
             record = Hop(
@@ -144,6 +146,6 @@ class RagPipeline:
             answer=answer,
             hops=hops,
             usage=usage,
-            cost_usd=self._cost(usage),
+            cost_usd=cost,
             total_ms=(time.perf_counter() - started) * 1000,
         )

@@ -28,7 +28,7 @@ class SystemUnderTest(Protocol):
 | `muse-spark-1.3-contributor` | OpenCode Go | automatic prefix, 50x discount |
 | `gemini-3.5-flash-lite` | Gemini Interactions API | implicit only, 4,096 minimum, 2,050-token incremental rule |
 
-Provider note, measured: the OpenCode Go gateway reports `cached_tokens: 0` for DeepSeek even on identical 5.4k-token prefixes, while the direct DeepSeek API reports 5,248 cached. Run cache experiments on direct DeepSeek and Gemini, not through the gateway.
+Provider note, measured: OpenCode Go does report cache (`prompt_tokens_details.cached_tokens`, 5,376 of 5,441 on a repeated prefix) and bills through `usage.opencode.allowance`, so Go is the default DeepSeek path. The catch is routing: a third identical call returned to a gateway instance without the cached prefix and cost 24 times more. That hit-or-miss cache locality is a result to measure, not a bug to hide. Direct DeepSeek stays available as a control.
 
 ## Credentials
 

@@ -84,6 +84,8 @@ class OpenAICompat:
         text = ""
         if choices:
             text = ((choices[0].get("message") or {}).get("content") or "").strip()
+        opencode = ((payload.get("usage") or {}).get("opencode") or {})
+        billing = float(opencode.get("allowance") or opencode.get("list_cost") or 0.0)
         return Generation(
             text=text,
             usage=_usage_from(payload),
@@ -91,4 +93,5 @@ class OpenAICompat:
             provider=self.name,
             model=self.model,
             raw=payload,
+            billing_usd=billing,
         )
