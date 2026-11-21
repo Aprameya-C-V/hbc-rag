@@ -50,6 +50,7 @@ class ModelPrice:
 
 PRICES: dict[str, ModelPrice] = {
     "deepseek-v4.1-flash": ModelPrice(0.15, 0.003, 0.60),
+    "deepseek-flash": ModelPrice(0.15, 0.003, 0.60),
     "mimo-v2.6-flash": ModelPrice(0.14, 0.0028, 0.28),
     "hy4-flash-free": ModelPrice(0.0, 0.0, 0.0),
     "muse-spark-1.3-contributor": ModelPrice(0.10, 0.002, 0.20),

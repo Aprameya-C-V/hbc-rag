@@ -28,6 +28,8 @@ class SystemUnderTest(Protocol):
 | `muse-spark-1.3-contributor` | OpenCode Go | automatic prefix, 50x discount |
 | `gemini-3.5-flash-lite` | Gemini Interactions API | implicit only, 4,096 minimum, 2,050-token incremental rule |
 
+Provider note, measured: the OpenCode Go gateway reports `cached_tokens: 0` for DeepSeek even on identical 5.4k-token prefixes, while the direct DeepSeek API reports 5,248 cached. Run cache experiments on direct DeepSeek and Gemini, not through the gateway.
+
 ## Credentials
 
 Never in this repo.

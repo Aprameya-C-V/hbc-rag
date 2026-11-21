@@ -51,6 +51,7 @@ class OpenAICompat:
             headers={
                 "content-type": "application/json",
                 "api-key": self.api_key,
+                "Authorization": f"Bearer {self.api_key}",
                 "User-Agent": "hbc-rag/0.1",
                 "x-opencode-session": "hbc-rag-p1",
             },
