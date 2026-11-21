@@ -33,11 +33,11 @@ class SystemUnderTest(Protocol):
 Never in this repo.
 
 ```
-~/.config/hbc-rag/keys.env     model keys, chmod 600
-.env.local                     Neon DATABASE_URL and bucket creds, gitignored
+keys.env       model keys, chmod 600, gitignored
+.env.local     Neon DATABASE_URL and bucket creds, gitignored
 ```
 
-`~/.config/hbc-rag/keys.env`:
+`keys.env` in the project root:
 
 ```
 HBC_GO_API_KEY=

@@ -18,7 +18,8 @@ def _find_project_root() -> Path:
 ROOT = _find_project_root()
 
 
-KEYS_FILE = Path.home() / ".config" / "hbc-rag" / "keys.env"
+KEYS_FILE = ROOT / "keys.env"
+FALLBACK_KEYS_FILE = Path.home() / ".config" / "hbc-rag" / "keys.env"
 
 
 def load_env() -> None:
@@ -27,8 +28,9 @@ def load_env() -> None:
         if path.exists():
             load_dotenv(path, override=False)
             break
-    if KEYS_FILE.exists():
-        load_dotenv(KEYS_FILE, override=False)
+    for keys in (KEYS_FILE, FALLBACK_KEYS_FILE):
+        if keys.exists():
+            load_dotenv(keys, override=False)
 
 
 @dataclass(frozen=True)

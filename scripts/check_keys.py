@@ -7,7 +7,7 @@ import os
 import urllib.error
 import urllib.request
 
-from hbc_rag.config import KEYS_FILE, gemini_api_key, go_api_key, load_env
+from hbc_rag.config import FALLBACK_KEYS_FILE, KEYS_FILE, gemini_api_key, go_api_key, load_env
 
 TIMEOUT = 20
 
@@ -28,6 +28,8 @@ def check(label: str, url: str, headers: dict[str, str]) -> None:
 def main() -> None:
     load_env()
     print(f"keys file: {KEYS_FILE} exists={KEYS_FILE.exists()}")
+    if FALLBACK_KEYS_FILE.exists():
+        print(f"fallback:  {FALLBACK_KEYS_FILE}")
 
     key = go_api_key()
     check(
