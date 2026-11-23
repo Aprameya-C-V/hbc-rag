@@ -7,9 +7,9 @@
       "group": "The study",
       "pages": [
         { "title": "Overview", "href": "/", "icon": "book" },
-        { "title": "Results", "href": "/results", "icon": "chart" },
+        { "title": "Results", "href": "/results", "icon": "chart-line" },
         { "title": "Method", "href": "/method", "icon": "flask" },
-        { "title": "Limits", "href": "/limits", "icon": "alert" }
+        { "title": "Limits", "href": "/limits", "icon": "triangle-exclamation" }
       ]
     }
   ]
