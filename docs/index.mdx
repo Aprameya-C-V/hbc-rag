@@ -1,0 +1,46 @@
+---
+title: HBC-RAG
+description: Hop-bounded agentic RAG for legal contract question answering.
+---
+
+# Hop-Bounded Agentic RAG for Legal Contract QA
+
+An agent that answers questions over legal contracts by planning a search, retrieving evidence, and verifying its answer against what it retrieved. A hop cap stops it looping.
+
+The study question is narrow: holding the model, prompt and corpus fixed, does retrieving **four passages per step instead of one** change quality, cost or latency?
+
+## Headline result
+
+On 140 questions across 468 contracts from LegalBench-RAG, with DeepSeek as the model:
+
+| Policy | Clause hit | Character recall | Character precision | Median latency | Cost |
+|---|---|---|---|---|---|
+| One passage per hop | 0.469 | 0.423 | 0.120 | 8.9 s | $0.063 |
+| **Four passages per hop** | **0.575** | **0.547** | 0.065 | **4.2 s** | **$0.047** |
+
+Clause hit rises 10.6 points (95% CI +4.6 to +16.6) and character recall 12.4 points, both excluding zero. Precision falls, which is the expected cost of returning more text, and it is reported rather than hidden.
+
+The direction replicates on a second model family: recall rises 9.4 points, while the clause-hit gain is not distinguishable from zero.
+
+<Callout type="info">
+This measures retrieval granularity **within one document**. The evidence in LegalBench-RAG sits inside a single contract, so it is not a multi-document reasoning claim, and the benchmark has no gold answers, so no answer-accuracy claim is made.
+</Callout>
+
+## What is here
+
+- [Results](/results): the full legal table, the second model, and the confidence intervals.
+- [Method](/method): corpus, chunking, retrieval, scoring and the paired bootstrap.
+- [Limits](/limits): everything this study does not claim.
+- [Live report](https://aprameyacv.com/reports/hbc-rag/): the generated HTML report with figures.
+- [Source](https://github.com/Aprameya-C-V/hbc-rag): code, scripts and raw run files.
+
+## Reproduce the legal run
+
+```bash
+uv sync --all-packages
+uv run python scripts/build_legal.py        # needs data/legalbench-rag
+uv run python scripts/run_legal_eval.py --limit 140
+uv run python scripts/legal_report.py       # writes reports/index.html
+```
+
+Credentials live in `keys.env` at the repo root, chmod 600 and gitignored.

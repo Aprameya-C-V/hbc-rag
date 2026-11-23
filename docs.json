@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.page/schema.json",
+  "name": "HBC-RAG",
+  "description": "Hop-bounded agentic RAG for legal contract question answering",
+  "sidebar": [
+    {
+      "group": "The study",
+      "pages": [
+        { "title": "Overview", "href": "/", "icon": "book" },
+        { "title": "Results", "href": "/results", "icon": "chart" },
+        { "title": "Method", "href": "/method", "icon": "flask" },
+        { "title": "Limits", "href": "/limits", "icon": "alert" }
+      ]
+    }
+  ]
+}

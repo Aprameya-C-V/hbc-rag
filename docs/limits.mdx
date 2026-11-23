@@ -1,0 +1,17 @@
+---
+title: Limits
+description: What this study does not claim.
+---
+
+# Limits
+
+Stated plainly, because the results are only useful if the boundary is clear.
+
+- **One document, not many.** Evidence in LegalBench-RAG sits inside a single contract. This measures retrieval granularity within a contract, not multi-document reasoning or cross-hop synthesis.
+- **No answer accuracy.** The legal benchmark has no gold answers. Everything reported is retrieval quality against human-labelled spans, not whether a generated answer was right.
+- **One seed per model.** Deltas under two points are noise until replicated.
+- **A subset.** 468 documents, MAUD merger agreements excluded because they do not fit a free database tier.
+- **No concurrency claim.** Repeat load runs at one request per second varied enough that run-to-run variance exceeded the effect. The harness ships, the conclusion does not.
+- **p95 includes gateway retries**, so it measures the served path rather than raw engine latency.
+
+The repository's `docs/method.md` records the protocol, and the README records the withdrawn claims.

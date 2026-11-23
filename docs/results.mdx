@@ -1,0 +1,37 @@
+---
+title: Results
+description: Legal contract results, the second model family, and the intervals.
+---
+
+# Results
+
+## Legal contracts, DeepSeek, 140 questions
+
+Corpus: 468 contracts and privacy policies from LegalBench-RAG (CUAD, ContractNLI, PrivacyQA), split into 13,962 passages.
+
+| Policy | Snippet hit | Char recall | Char precision | Hops | p50 | Cost |
+|---|---|---|---|---|---|---|
+| Fine, 1 passage per hop | 0.469 | 0.423 | 0.120 | 2.84 | 8.9 s | $0.063 |
+| Coarse, 4 passages per hop | **0.575** | **0.547** | 0.065 | **1.51** | **4.2 s** | **$0.047** |
+
+Coarse minus fine, paired bootstrap at 95%:
+
+- Snippet hit **+0.106** (+0.046 to +0.166)
+- Character recall **+0.124** (+0.060 to +0.186)
+- Character precision **-0.055** (-0.082 to -0.031)
+
+## Legal contracts, MiMo, 100 questions
+
+| Policy | Snippet hit | Char recall | Char precision | Hops | p50 | Cost |
+|---|---|---|---|---|---|---|
+| Fine | 0.509 | 0.441 | 0.129 | 2.90 | 15.7 s | $0.061 |
+| Coarse | 0.562 | **0.535** | 0.064 | 1.59 | 8.6 s | $0.050 |
+
+- Recall gain **+0.094** (+0.023 to +0.166), significant.
+- Snippet-hit gain **+0.053** (-0.015 to +0.123), not distinguishable from zero.
+
+## What this means in practice
+
+Fetching more per hop finds evidence more often and finishes sooner, because the agent needs fewer hops. It returns more text that is not the answer, so a pipeline that re-ranks or trims the context before generation will keep the gain and pay less for it.
+
+The earlier HotpotQA study, which measured answer quality on a benchmark that has gold answers, is in the repository and the live report.
