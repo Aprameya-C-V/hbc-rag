@@ -1,0 +1,48 @@
+---
+title: Method
+description: Corpus, retrieval, scoring and the statistics behind the legal study.
+---
+
+# How the study was run
+
+The detailed protocol, metrics and threats to validity live in
+[`docs/method.md`](https://github.com/Aprameya-C-V/hbc-rag/blob/main/docs/method.md)
+in the repository. This page is the short version.
+
+## Corpus
+
+468 contracts and privacy policies from LegalBench-RAG: CUAD, ContractNLI and PrivacyQA.
+They are split into 13,962 passages and loaded into Postgres with pgvector.
+MAUD merger agreements are excluded because they do not fit a free database tier.
+
+## Retrieval
+
+Two policies, identical in everything except hop size:
+
+- **Fine:** one passage per hop.
+- **Coarse:** four passages per hop.
+
+Hybrid retrieval pairs pgvector HNSW with Postgres full-text search, fused by reciprocal rank fusion. The agent plans, retrieves, and verifies its answer against the evidence it collected, under a hop cap that stops it looping.
+
+## Scoring
+
+Each answer is scored by character span against the benchmark's human-labelled evidence, not by an LLM judge:
+
+- **Snippet hit:** did the retrieved text overlap a labelled evidence span.
+- **Character recall** and **precision:** how much of the labelled evidence was retrieved, and how much retrieved text was not evidence.
+- **Latency and cost:** median and p95 wall time, and billed cost per question.
+
+## Statistics
+
+Policies are compared per question, not on pooled averages, with a paired bootstrap at 95% and a McNemar test on the answer-level comparison. Reports state the interval, not just the point estimate.
+
+## Reproduce it
+
+```bash
+uv sync --all-packages
+uv run python scripts/build_legal.py
+uv run python scripts/run_legal_eval.py --limit 140
+uv run python scripts/legal_report.py
+```
+
+Credentials live in `keys.env` at the repo root, chmod 600 and gitignored.
